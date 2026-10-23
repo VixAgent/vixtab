@@ -1,0 +1,42 @@
+{
+  "name": "vixtab",
+  "version": "0.1.0",
+  "description": "Orchestrate many Claude Code sessions in parallel on one repo: a fresh, labeled VS Code tab per ticket, conflict-free merges, context-saving orchestration.",
+  "license": "MIT",
+  "author": "phanthaitrung",
+  "homepage": "https://github.com/VixAgent/vixtab",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/VixAgent/vixtab.git"
+  },
+  "bugs": {
+    "url": "https://github.com/VixAgent/vixtab/issues"
+  },
+  "type": "module",
+  "private": true,
+  "bin": {
+    "vixtab": "src/cli.ts"
+  },
+  "scripts": {
+    "vixtab": "bun src/cli.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test test/",
+    "build": "bun scripts/build.ts",
+    "diagrams": "bun docs/diagrams/render.ts"
+  },
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "devDependencies": {
+    "@fontsource/caveat": "^5.3.0",
+    "@fontsource/kalam": "^5.3.0",
+    "@fontsource/patrick-hand": "^5.3.0",
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/bun": "^1.4.4",
+    "@types/opentype.js": "^1.3.10",
+    "@vscode/vsce": "^4.0.0",
+    "opentype.js": "^2.0.0",
+    "roughjs": "^4.6.6",
+    "typescript": "^7.0.2"
+  }
+}

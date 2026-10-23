@@ -1,0 +1,249 @@
+<p align="center"><img src="docs/images/icon.svg" width="96" alt="VixTab"></p>
+
+<h1 align="center">VixTab</h1>
+
+<p align="center"><b>Run many Claude Code sessions in parallel on one repository — one fresh, labeled VS Code tab per ticket,<br>
+conflict-free merges, and an orchestrator that keeps its own context small.</b></p>
+
+<p align="center">
+<a href="https://github.com/VixAgent/vixtab/actions/workflows/ci.yml"><img src="https://github.com/VixAgent/vixtab/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+<a href="https://github.com/VixAgent/vixtab/releases"><img src="https://img.shields.io/github/v/release/VixAgent/vixtab" alt="Release"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT"></a>
+<img src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows-555" alt="Linux | Windows">
+</p>
+
+<p align="center">English · <a href="README.vi.md">Tiếng Việt</a></p>
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.svg"><img src="docs/images/hero.svg" alt="One orchestrator tab and one fresh tab per ticket, each in its own column" width="100%"></picture>
+
+## Why VixTab
+
+A single long Claude Code session gets slower and more expensive as it goes: every turn re-reads a context that keeps growing,
+until it is compacted and details are lost. Splitting the work across several sessions by hand is tedious and risky: two
+sessions edit the same files, push over each other, forget dev servers, and you spend your time copying prompts between tabs.
+
+VixTab turns one Claude Code tab into an **orchestrator**. It splits your goal into self-contained tickets, opens a **fresh tab
+for each ticket** in its own column, gives it a one-line assignment, sleeps until something happens, and closes the tab when
+the ticket is done. Every ticket works in its own git worktree and lands on `main` through a test-gated merge queue.
+
+## Features
+
+- **Context-saving orchestration.** The orchestrator never implements tickets. Each ticket gets a new session that starts
+  small and ends when the ticket is done; the orchestrator reads one-line results and waits on a background process, so it
+  spends no tokens while nothing happens. [How it works ↓](#how-the-orchestration-saves-context)
+- **A tab per ticket, in its own column.** Labeled with the ticket id, opened to the right without stealing focus, columns
+  evened, closed by label. Creating a tab runs no model turn: it costs no tokens and the tab uses your default model.
+- **Parallel without conflicts.** Atomic locks, one git worktree and branch per ticket, and a serialized merge queue that
+  rebases, writes the board status *after* the rebase, runs the tests and only then pushes. Red tests never land.
+- **Parallel by default, queue only on real conflicts.** Tickets declare the code area they change. Same function ⇒ the
+  ticket waits (`--after`). Same file only ⇒ both run, and `vixtab wait` tells the later one to rebase when the earlier one
+  merges. `vixtab ticket overlap` lists files that two active tickets change.
+- **Resource gates instead of a fixed session cap.** A new tab opens only when free RAM (minus RAM reserved for tabs opened in
+  the last 90 s), swap, commit charge (Windows) and CPU have room. Heavy steps (full test suites, E2E, builds, browsers) go
+  through elastic, memory-capped slots — a cgroup scope on Linux, a Job Object on Windows.
+- **Questions without ping-pong.** A blocked session asks with `vixtab ticket ask`; the question lands in the ticket on
+  `main`, the orchestrator is woken up, answers once, and the session continues.
+- **Clean-up you can trust.** `done` refuses to push untested code, stops processes left in the worktree (dev servers,
+  browsers), and removes the worktree. Orphans are found later with `vixtab procs orphans`. VS Code, Claude Code, sshd and the
+  desktop shell are never stopped.
+- **Linux and Windows.** One code base; everything OS-specific lives in two small adapters. Ships as a single program with
+  the runtime included — no Bun, Node or Python needed.
+- **A playground** to try all of this safely, with or without spending tokens.
+
+## Quick start
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/install-dark.svg"><img src="docs/images/install.svg" alt="Install VixTab, click Set up, click VixTab in the status bar and type the goal" width="100%"></picture>
+
+1. **Install the extension.** In VS Code: Extensions ▸ search **VixTab** (`phanthaitrung.vixtab`). Or download the
+   `.vsix` for your platform from [Releases](https://github.com/VixAgent/vixtab/releases) and run
+   `code --install-extension vixtab-linux-x64.vsix` (or `vixtab-win32-x64.vsix`). The Claude Code extension is installed
+   with it if you do not have it yet.
+2. **Click "Set up"** in the notification (or Command Palette ▸ *VixTab: Set up*). It copies the `vixtab` program to
+   `~/.vixtab/bin`, puts it on your PATH, and installs two Claude Code skills in `~/.claude/skills`:
+   `vixtab-orchestrate` and `vixtab-ticket`.
+3. **Open a repository and click "VixTab"** in the status bar. An *Orchestrator* tab opens with `/vixtab-orchestrate`
+   already typed in. Add your goal — for example *"fix issues #12, #15 and #18 in parallel"* — and press Enter.
+
+The first time, the orchestrator offers to create the ticket board (`vixtab init --push`), and Claude Code asks once whether
+it may trust the folder. VixTab never answers that question without you.
+
+**Requirements:** VS Code 1.90+, the Claude Code extension (signed in), git, and a remote with a `main` branch (tickets are
+read from there; a local bare repository is fine). Linux x64/arm64 or Windows 10/11 x64.
+
+Terminal only? `curl -fsSL https://raw.githubusercontent.com/VixAgent/vixtab/main/install.sh | bash` (Linux) or
+`irm https://raw.githubusercontent.com/VixAgent/vixtab/main/install.ps1 | iex` (Windows PowerShell), then `vixtab doctor`.
+
+## Try it in the playground
+
+`vixtab playground create` (or *VixTab: Create playground*) builds a sandbox in `~/vixtab-playground`: a local bare "origin",
+a tiny recipe-book project and five tickets designed to show everything — three independent tickets, one that shares a file
+with another, and one that must ask a question. Nothing in it can reach GitHub or your real projects.
+
+| Level | What you see | Needs | Tokens |
+|---|---|---|---|
+| `vixtab playground demo board` | 4 parallel claims, duplicate claim refused, overlap report, merge queue, red tests blocked, `rebase` and `ask` events, `done` stopping a leftover process, an abandoned lock taken over — 16 checks | a terminal | none |
+| `vixtab playground demo tabs` | three labeled Claude tabs opening in new columns to the right, evened, then closed | VS Code + VixTab | none |
+| `vixtab playground demo heavy` | five heavy runs sharing two slots; a run over its memory cap is stopped | a terminal | none |
+| Open `~/vixtab-playground/project`, click **VixTab**, type *do all tickets on the board* | the real thing: an orchestrator opens a tab per ticket, they work, merge, ask, finish, and their tabs close | Claude Code signed in | a little |
+
+The scripted board demo takes about 10 s on Linux and 80 s on Windows, and doubles as the end-to-end test in CI.
+
+## How the orchestration saves context
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/context-saving-dark.svg"><img src="docs/images/context-saving.svg" alt="One long session re-reads a growing context every turn; VixTab gives each ticket a fresh, short session" width="100%"></picture>
+
+1. **The orchestrator plans, dispatches and verifies — it does not implement.** Each ticket runs in a fresh session, so no
+   context ever holds more than one ticket.
+2. **Tickets are self-contained:** what to change, where (files, functions, line hints), why, the expected result, and the exact
+   verification command. The working session does not explore the repository.
+3. **One-line assignments.** *"Work on ticket T-003 with the vixtab-ticket skill."* The rules live in the skill, read once.
+4. **Waiting costs nothing.** `vixtab wait T-001:<pid> …` runs in the background and exits only when a ticket is done, asks a
+   question, needs a rebase, or its session died. No polling loop in the conversation.
+5. **Opening a tab costs nothing.** VixTab starts the Claude CLI in a pseudo-terminal, types `/rename <label>` and `/exit` —
+   no model turn — then asks the VS Code extension to open that session in a new column.
+6. **Cheap checks.** Before closing a tab, the orchestrator trusts `vixtab ticket list` and the waiter instead of reading
+   transcripts or diffs.
+7. **Handover.** When the orchestrator's own context gets large, it writes a short handover note, opens a fresh
+   *Orchestrator-2* tab and stops.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/layout-flow-dark.svg"><img src="docs/images/layout-flow.svg" alt="How VixTab lays out the tabs: one orchestrator column, one new column per ticket, closed when done" width="100%"></picture>
+
+## The ticket lifecycle
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/lifecycle-dark.svg"><img src="docs/images/lifecycle.svg" alt="Ticket lifecycle: TODO, claim, DOING, ask and answer, merge queue with tests, DONE" width="100%"></picture>
+
+The board is `tickets/README.md` on your main branch: a table with one row per ticket (`☐ TODO`, `⏳ DOING (session)`,
+`❓ ASK (session)`, `✅ DONE (session)`) plus one Markdown file per ticket. Board-only changes (new ticket, question, answer,
+release) are committed straight onto `main` with git plumbing and a temporary index — no checkout, fast even in huge
+repositories.
+
+## Parallel without conflicts
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/merge-queue-dark.svg"><img src="docs/images/merge-queue.svg" alt="Four tickets merge through one lock: fetch, rebase, status, tests, push" width="100%"></picture>
+
+- **Claim** creates the lock `T-NNN` with `mkdir` (atomic on ext4 and NTFS): two sessions can never take the same ticket.
+- Each ticket gets a worktree `<repo>.vixtab/wt-T-NNN` on branch `vixtab/T-NNN`, and a private port in `.vixtab.env`
+  (`base + ticket number`, moved by +1000 when something already listens there).
+- **Every write to `main` goes through one lock**, `merge-main`. The status cell is written after the rebase, on the newest
+  board, so tickets claimed or finished at the same moment never conflict on neighbouring rows.
+- **Tests run after the rebase**, on exactly what will be pushed. Red ⇒ nothing is pushed.
+- Locks whose owner died (same host, pid gone) are taken over automatically, through a second lock so that two sessions cannot
+  both "repair" the same lock.
+
+## Resource gates
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/gates-dark.svg"><img src="docs/images/gates.svg" alt="Resource gates: tabs open only when RAM, swap, commit and CPU have room; heavy steps use elastic capped slots" width="100%"></picture>
+
+Defaults scale with the machine: minimum free RAM = total/8 (4–16 GB), maximum swap = total/4 (4–16 GB), commit and CPU 85 %,
+1 GB reserved per tab opened in the last 90 s. Heavy slots = max(2, logical CPUs / 4), each run capped at 6 GB unless
+`--mem` says otherwise; a run starts only if free RAM minus the caps of runs that started in the last 90 s leaves its own
+cap + 4 GB. `vixtab session count` shows the gate; `vixtab watch ram` alerts the orchestrator before the machine swaps.
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `vixtab setup` · `vixtab doctor [--brief]` | install CLI + skills · check everything, with the fix for each problem |
+| `vixtab init [--push]` | add `vixtab.config.json` and the board to a repository |
+| `vixtab ticket list` · `new "<title>" [--area …] [--after T-x] [--body-file F]` · `show <id> [--questions]` | the board |
+| `vixtab ticket claim <id> --as <session> [--takeover]` | lock + worktree + branch + ⏳ DOING |
+| `vixtab ticket merge <id> [-- <test command>]` | rebase, test after rebase, push |
+| `vixtab ticket done <id>` · `release <id>` | ✅ DONE + clean-up · give the ticket back |
+| `vixtab ticket ask <id> "<question>"` · `answer <id> "<answer>"` | ❓ ASK ↔ ⏳ DOING, recorded in the ticket |
+| `vixtab ticket overlap [<id>…]` | files changed by two or more active tickets |
+| `vixtab session open <label>` · `close <label> [<pid>]` · `count` · `list` | labeled Claude tabs, resource-gated |
+| `vixtab tab layout` · `even` · `open <session>` · `close <label>` · `windows` | low-level tab control |
+| `vixtab wait [--as <name>] <id>[:<pid>] …` | sleep until `done` / `ask` / `rebase` / `gone` events |
+| `vixtab heavy [--mem 6G] -- <command>` | run a heavy step through elastic, capped slots |
+| `vixtab watch ram` · `vixtab procs list\|kill <dir>` · `procs orphans [--kill]` · `vixtab lock <name> -- <cmd>` | machine helpers |
+| `vixtab playground create\|demo board\|demo tabs\|demo heavy\|check\|reset\|remove` | the sandbox |
+
+`vixtab help <command>` prints the details and exit codes.
+
+## Configuration
+
+`vixtab.config.json` at the repository root (all fields optional):
+
+```json
+{
+  "board": "tickets",
+  "branch": "main",
+  "remote": "origin",
+  "ticketPrefix": "T-",
+  "ticketDigits": 3,
+  "home": "../my-repo.vixtab",
+  "test": "bun test",
+  "setup": "bun install",
+  "ports": { "base": 4000 },
+  "env": { "VITE_PORT": "{port}" },
+  "hotFiles": ["src/types.ts"],
+  "sessions": { "max": 0, "minFreeRamMB": 8192, "maxSwapMB": 8192, "maxCpu": 0.85, "reserveMB": 1024 },
+  "heavy": { "slots": 4, "mem": "6G", "headroomMB": 4096 }
+}
+```
+
+Environment overrides: `VIXTAB_HOME`, `VIXTAB_REPO`, `VIXTAB_MAX_SESSIONS`, `VIXTAB_MIN_FREE_RAM_MB`, `VIXTAB_MAX_SWAP_MB`,
+`VIXTAB_MAX_CPU`, `VIXTAB_MAX_COMMIT`, `VIXTAB_HEAVY_SLOTS`, `VIXTAB_HEAVY_MEM`, `VIXTAB_CLAUDE_BIN`, `VIXTAB_EXT_HOST_PID`.
+
+## How it works
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/architecture-dark.svg"><img src="docs/images/architecture.svg" alt="Architecture: Claude Code tabs call the vixtab CLI; shared core plus Linux and Windows adapters; VS Code extension bridge" width="100%"></picture>
+
+- **Extension bridge.** The VixTab extension registers its window in `~/.cache/vixtab/windows/<pid>.json` and executes tab
+  commands written to `~/.cache/vixtab/commands/<pid>-<id>.cmd.json` — only the window whose extension-host pid is in the file
+  name acts, so tabs open in the window you are working in. Tab actions run one at a time.
+- **Labeled sessions without tokens.** `vixtab session open` runs the Claude CLI that ships with the Claude Code extension in a
+  pseudo-terminal, types `/rename <label>` and `/exit`, then the extension opens that session with Claude Code's
+  `claude-vscode.editor.open` command; the tab takes its label from the session title.
+- **Sessions and transcripts** are found in `~/.claude/sessions` and `~/.claude/projects`.
+- **Skills** (`~/.claude/skills/vixtab-*/SKILL.md`) hold the protocol for the orchestrator and for ticket sessions, so the
+  assignment message stays one line. Prefer plugins? `/plugin marketplace add VixAgent/vixtab` then
+  `/plugin install vixtab@vixtab` installs the same skills (the extension is still needed for tabs).
+
+| | Linux | Windows |
+|---|---|---|
+| processes + working directories | `/proc` (your own processes) | CIM + the PEB read through FFI |
+| stopping processes | SIGTERM, 5 s, SIGKILL | TerminateProcess |
+| memory cap of heavy runs | `systemd-run --user --scope MemoryMax` (none without a systemd user session, e.g. WSL) | Job Object memory limit |
+| free RAM · swap · commit | `/proc/meminfo` | `GlobalMemoryStatusEx` · page file · commit limit |
+| test commands from the config | `sh -c` | Git Bash (never the WSL `bash.exe`), else `cmd.exe` |
+| path comparison | case-sensitive | case-insensitive, `d:` = `D:`; reserved names (`CON`, `NUL`…) refused in ticket slugs |
+
+## Limitations
+
+- VixTab relies on parts of Claude Code that are **not public APIs**: the `claude-vscode.editor.open` command, the session
+  registry, the transcript format and `/rename`. They were checked with Claude Code 2.1.280 (Linux, VS Code Remote SSH) and
+  2.1.308 (Windows); a Claude Code update can break them. `vixtab doctor` checks what it can.
+- Claude Code opens only sessions of the window's own folder: run the orchestrator in a window whose folder is the repository.
+- Closing a Claude tab can take up to a minute while Claude Code shuts the session down. With Claude Code 2.1.280, two tabs
+  closed at the same moment can leave Claude Code unable to open tabs ("Webview is disposed") until the window is reloaded;
+  VixTab therefore runs tab actions one at a time. See [troubleshooting](docs/troubleshooting.md).
+- Older Claude Code versions address sessions by an auto-generated name instead of the tab label; `session open` prints both.
+- Locks are per machine. Several machines can share a remote, but each machine orchestrates its own sessions.
+- macOS is not supported yet (most of the code is POSIX; contributions welcome).
+- VixTab is an independent project, not affiliated with or endorsed by Anthropic.
+
+## Security
+
+- The extension only accepts four actions on Claude tabs (open, close, layout, even), validates session ids and labels, and
+  runs nothing else. Any process of your user account can write a command file — the same trust boundary as your account.
+- `vixtab` talks to the network only through git. It never stops protected processes (VS Code, Claude Code, sshd, the
+  desktop shell) and never answers Claude Code's folder-trust prompt unless you pass `--trust`.
+- Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
+
+## Development
+
+```bash
+bun install
+bun run vixtab doctor          # run from source
+bun test test/                 # unit tests + the playground demo
+bun run typecheck
+bun run diagrams               # re-draw docs/images (rough.js + Patrick Hand, OFL)
+bun run build                  # dist/: CLIs, .vsix per platform, archives, SHA256SUMS
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+[MIT](LICENSE) © phanthaitrung. The diagrams use the Patrick Hand font (SIL Open Font License 1.1).
