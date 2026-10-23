@@ -69,6 +69,14 @@ export async function removeWorktree(c: Config, W: string, id: string): Promise<
   for (let attempt = 1; ; attempt++) {
     const r = git(c.repo, "worktree", "remove", "--force", W);
     if (r.code === 0) break;
+    // A remove that failed half way (a file still locked on Windows) leaves the folder but no worktree entry.
+    if (/is not a working tree/.test(r.err)) {
+      try {
+        rmSync(W, { recursive: true, force: true });
+      } catch {}
+      git(c.repo, "worktree", "prune");
+      if (!existsSync(W)) break;
+    }
     if (attempt >= 5) fail(`git worktree remove ${native(W)} failed:\n${r.err}`);
     await sleep(1000); // Windows keeps files locked for a moment after a process exits
   }

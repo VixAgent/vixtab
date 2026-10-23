@@ -1,4 +1,5 @@
 // Small helpers shared by every command: paths, errors, sleeping, formatting.
+import { realpathSync } from "node:fs";
 import { homedir } from "node:os";
 
 export const IS_WIN = process.platform === "win32";
@@ -11,6 +12,18 @@ export const isInside = (p: string, root: string) => {
   const a = pathKey(p), b = pathKey(root);
   return a === b || a.startsWith(b.endsWith("/") ? b : b + "/");
 };
+/**
+ * Windows 8.3 short names (C:\Users\RUNNER~1\…) name the same folder as the long form; processes report whichever form
+ * they were started with. Expand them before comparing. Elsewhere (and for paths without "~") the path is returned as is.
+ */
+export function longPath(p: string): string {
+  if (!IS_WIN || !p.includes("~")) return p;
+  try {
+    return realpathSync.native(p);
+  } catch {
+    return p;
+  }
+}
 /** OS-native spelling (backslashes on Windows) for printing or for passing to native programs. */
 export const native = (p: string) => (IS_WIN ? norm(p).replace(/\//g, "\\") : norm(p));
 

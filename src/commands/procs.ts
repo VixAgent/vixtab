@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { has, parseArgs } from "../core/args.ts";
 import { idPattern, loadConfig } from "../core/config.ts";
 import { ancestors, isProtected, printProcesses, processesInside, stopPids } from "../core/proc.ts";
-import { escapeRe, fail, isInside, native, norm, pathKey } from "../core/util.ts";
+import { escapeRe, fail, isInside, longPath, native, norm, pathKey } from "../core/util.ts";
 import { platform } from "../platform/index.ts";
 import { isDone, readClaim } from "./ticket.ts";
 
@@ -37,7 +37,8 @@ export async function procs(argv: string[]): Promise<void> {
     const found: { pid: number; why: string; where: string; cmd: string }[] = [];
     for (const p of list) {
       if (mine.has(p.pid) || isProtected(p)) continue;
-      const fromCwd = p.cwd && isInside(p.cwd, c.home) ? norm(p.cwd) : null;
+      const cwd = p.cwd ? norm(longPath(p.cwd)) : null;
+      const fromCwd = cwd && isInside(cwd, c.home) ? cwd : null;
       const where = (fromCwd && re.test(pathKey(fromCwd)) ? fromCwd : null) ?? re.exec(norm(p.cmdline))?.[0] ?? fromCwd;
       if (!where) continue;
       const raw = re.exec(pathKey(where))?.[1];

@@ -1,6 +1,6 @@
 // Processes: liveness, ancestry, "which processes belong to this folder", and stopping them safely.
 import { platform, type Proc } from "../platform/index.ts";
-import { IS_WIN, isInside, native, pathKey, sleep } from "./util.ts";
+import { IS_WIN, isInside, longPath, native, pathKey, sleep } from "./util.ts";
 
 /** Alive? (EPERM = exists but we may not signal it ⇒ alive.) */
 export function alive(pid: number): boolean {
@@ -37,12 +37,14 @@ export const isProtected = (p: Proc) => PROTECTED_NAMES.test(p.name) || /\.vscod
  */
 export function processesInside(dir: string, list = platform.processes()): Proc[] {
   const me = process.pid, mine = new Set([me, ...ancestors(me, list)]);
-  const keys = [pathKey(dir) + "/", pathKey(dir).replace(/\//g, "\\") + "\\"];
+  const forms = [...new Set([dir, longPath(dir)])];
+  const keys = forms.flatMap((d) => [pathKey(d) + "/", pathKey(d).replace(/\//g, "\\") + "\\"]);
+  const inside = (cwd: string) => forms.some((d) => isInside(longPath(cwd), d) || isInside(cwd, d));
   const hits = new Set<number>();
   for (const p of list) {
     if (mine.has(p.pid) || isProtected(p)) continue;
     const cmd = IS_WIN ? p.cmdline.toLowerCase() : p.cmdline;
-    if ((p.cwd && isInside(p.cwd, dir)) || keys.some((k) => cmd.includes(k)) || pathKey(p.cmdline).endsWith(pathKey(dir))) hits.add(p.pid);
+    if ((p.cwd && inside(p.cwd)) || keys.some((k) => cmd.includes(k)) || forms.some((d) => pathKey(p.cmdline).endsWith(pathKey(d)))) hits.add(p.pid);
   }
   const out = new Map<number, Proc>();
   for (const p of list) {
