@@ -31,8 +31,10 @@ the ticket is done. Every ticket works in its own git worktree and lands on `mai
 - **Context-saving orchestration.** The orchestrator never implements tickets. Each ticket gets a new session that starts
   small and ends when the ticket is done; the orchestrator reads one-line results and waits on a background process, so it
   spends no tokens while nothing happens. [How it works ↓](#how-the-orchestration-saves-context)
-- **A tab per ticket, in its own column.** Labeled with the ticket id, opened to the right without stealing focus, columns
-  evened, closed by label. Creating a tab runs no model turn: it costs no tokens and the tab uses your default model.
+- **A tab per ticket, and a renderer per window.** Each tab is labeled with the ticket id and opens without stealing focus:
+  the first three as new columns next to the orchestrator, the next ones stacked in **ticket windows** — separate VS Code
+  windows, five Claude tabs each — because all tabs of one window share one renderer thread. Creating a tab runs no model turn:
+  it costs no tokens and the tab uses your default model. [Why ↓](#one-renderer-per-window)
 - **Parallel without conflicts.** Atomic locks, one git worktree and branch per ticket, and a serialized merge queue that
   rebases, writes the board status *after* the rebase, runs the tests and only then pushes. Red tests never land.
 - **Parallel by default, queue only on real conflicts.** Tickets declare the code area they change. Same function ⇒ the
@@ -44,7 +46,7 @@ the ticket is done. Every ticket works in its own git worktree and lands on `mai
 - **Questions without ping-pong.** A blocked session asks with `vixtab ticket ask`; the question lands in the ticket on
   `main`, the orchestrator is woken up, answers once, and the session continues.
 - **Clean-up you can trust.** `done` refuses to push untested code, stops processes left in the worktree (dev servers,
-  browsers), and removes the worktree. Orphans are found later with `vixtab procs orphans`. VS Code, Claude Code, sshd and the
+  browsers), and removes the worktree. Test commands always run with `pipefail`, so `… | tail` cannot hide a red test. Orphans are found later with `vixtab procs orphans`. VS Code, Claude Code, sshd and the
   desktop shell are never stopped.
 - **Linux and Windows.** One code base; everything OS-specific lives in two small adapters. Ships as a single program with
   the runtime included — no Bun, Node or Python needed.
@@ -108,6 +110,27 @@ The scripted board demo takes about 10 s on Linux and 80 s on Windows, and doubl
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/layout-flow-dark.svg"><img src="docs/images/layout-flow.svg" alt="How VixTab lays out the tabs: one orchestrator column, one new column per ticket, closed when done" width="100%"></picture>
 
+## One renderer per window
+
+Every Claude Code tab of a VS Code window runs in that window's **single renderer thread**. On a 44-thread Windows workstation,
+14 visible columns drove that thread to 102 % of one core and froze every session, while total CPU was at 64 % and 60 GB of RAM
+were free. Hidden tabs keep running too: 7 stacked tabs still reached 91 %.
+
+So VixTab spreads tabs over windows (`"tabs"` in `vixtab.config.json`):
+
+| Mode | Where a new ticket tab goes |
+|---|---|
+| `auto` (default) | a new column next to the orchestrator while it has fewer than `inWindowMax` (3) ticket tabs; then the **ticket window** with the fewest Claude tabs below `perWindowMax` (5), stacked in one group; none free ⇒ VixTab opens a new ticket window |
+| `windows` | always ticket windows; the orchestrator's window keeps only the orchestrator |
+| `columns` | always new columns in the orchestrator's window (fine for a few tickets) |
+
+A ticket window is a VS Code window opened from `<repo>/.vixtab/windows/tickets-N.code-workspace` (kept out of git through
+`.git/info/exclude`). The file lives inside your repository on purpose: VS Code opens a workspace file from an untrusted
+location in Restricted Mode, where Claude Code does not run. When the last Claude tab of a ticket window closes, the window closes
+too (setting `vixtab.closeEmptyTicketWindows`). `vixtab session close` finds a tab in any window;
+`vixtab session count` lists every window with its Claude tabs and, for local VS Code, the busiest renderer thread
+(≈ 90 % or more ⇒ that window's tabs lag).
+
 ## The ticket lifecycle
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/lifecycle-dark.svg"><img src="docs/images/lifecycle.svg" alt="Ticket lifecycle: TODO, claim, DOING, ask and answer, merge queue with tests, DONE" width="100%"></picture>
@@ -152,7 +175,7 @@ cap + 4 GB. `vixtab session count` shows the gate; `vixtab watch ram` alerts the
 | `vixtab ticket ask <id> "<question>"` · `answer <id> "<answer>"` | ❓ ASK ↔ ⏳ DOING, recorded in the ticket |
 | `vixtab ticket overlap [<id>…]` | files changed by two or more active tickets |
 | `vixtab session open <label>` · `close <label> [<pid>]` · `count` · `list` | labeled Claude tabs, resource-gated |
-| `vixtab tab layout` · `even` · `open <session>` · `close <label>` · `windows` | low-level tab control |
+| `vixtab tab layout` · `even` · `join` · `open <session>` · `close <label>` · `windows` · `new-window` | low-level tab control, ticket windows |
 | `vixtab wait [--as <name>] <id>[:<pid>] …` | sleep until `done` / `ask` / `rebase` / `gone` events |
 | `vixtab heavy [--mem 6G] -- <command>` | run a heavy step through elastic, capped slots |
 | `vixtab watch ram` · `vixtab procs list\|kill <dir>` · `procs orphans [--kill]` · `vixtab lock <name> -- <cmd>` | machine helpers |
@@ -177,13 +200,16 @@ cap + 4 GB. `vixtab session count` shows the gate; `vixtab watch ram` alerts the
   "ports": { "base": 4000 },
   "env": { "VITE_PORT": "{port}" },
   "hotFiles": ["src/types.ts"],
+  "tabs": { "mode": "auto", "inWindowMax": 3, "perWindowMax": 5 },
   "sessions": { "max": 0, "minFreeRamMB": 8192, "maxSwapMB": 8192, "maxCpu": 0.85, "reserveMB": 1024 },
   "heavy": { "slots": 4, "mem": "6G", "headroomMB": 4096 }
 }
 ```
 
 Environment overrides: `VIXTAB_HOME`, `VIXTAB_REPO`, `VIXTAB_MAX_SESSIONS`, `VIXTAB_MIN_FREE_RAM_MB`, `VIXTAB_MAX_SWAP_MB`,
-`VIXTAB_MAX_CPU`, `VIXTAB_MAX_COMMIT`, `VIXTAB_HEAVY_SLOTS`, `VIXTAB_HEAVY_MEM`, `VIXTAB_CLAUDE_BIN`, `VIXTAB_EXT_HOST_PID`.
+`VIXTAB_MAX_CPU`, `VIXTAB_MAX_COMMIT`, `VIXTAB_HEAVY_SLOTS`, `VIXTAB_HEAVY_MEM`, `VIXTAB_TAB_MODE`, `VIXTAB_TABS_IN_WINDOW`,
+`VIXTAB_TABS_PER_WINDOW`, `VIXTAB_CLAUDE_BIN`, `VIXTAB_EXT_HOST_PID` (pin every tab action to one window),
+`VIXTAB_ORCHESTRATOR_WINDOW` (the orchestrator's window when you drive VixTab from outside VS Code; the tabs policy still applies).
 
 ## How it works
 
@@ -206,7 +232,9 @@ Environment overrides: `VIXTAB_HOME`, `VIXTAB_REPO`, `VIXTAB_MAX_SESSIONS`, `VIX
 | stopping processes | SIGTERM, 5 s, SIGKILL | TerminateProcess |
 | memory cap of heavy runs | `systemd-run --user --scope MemoryMax` (none without a systemd user session, e.g. WSL) | Job Object memory limit |
 | free RAM · swap · commit | `/proc/meminfo` | `GlobalMemoryStatusEx` · page file · commit limit |
-| test commands from the config | `sh -c` | Git Bash (never the WSL `bash.exe`), else `cmd.exe` |
+| test commands | `bash -o pipefail -c` (dash has no pipefail) | Git Bash with pipefail (never the WSL `bash.exe`), else `cmd.exe` |
+| busiest renderer thread | `/proc/<pid>/task` of local `code --type=renderer` (not visible with VS Code Remote) | thread times of `Code.exe --type=renderer` |
+| leftovers after `git worktree remove` | — | junctions (bun's `node_modules`) unlinked without following them, empty folders removed, real files kept |
 | path comparison | case-sensitive | case-insensitive, `d:` = `D:`; reserved names (`CON`, `NUL`…) refused in ticket slugs |
 
 ## Limitations
@@ -214,7 +242,10 @@ Environment overrides: `VIXTAB_HOME`, `VIXTAB_REPO`, `VIXTAB_MAX_SESSIONS`, `VIX
 - VixTab relies on parts of Claude Code that are **not public APIs**: the `claude-vscode.editor.open` command, the session
   registry, the transcript format and `/rename`. They were checked with Claude Code 2.1.280 (Linux, VS Code Remote SSH) and
   2.1.308 (Windows); a Claude Code update can break them. `vixtab doctor` checks what it can.
-- Claude Code opens only sessions of the window's own folder: run the orchestrator in a window whose folder is the repository.
+- Claude Code opens only sessions of the window's own folder: run the orchestrator in a window whose folder is the repository
+  (ticket windows open the repository too).
+- Opening a ticket window needs the `code` command and a VS Code that can open windows (not a locked screen); if it cannot, the
+  tab opens as a column in the orchestrator's window and `session open` prints a warning.
 - Closing a Claude tab can take up to a minute while Claude Code shuts the session down. With Claude Code 2.1.280, two tabs
   closed at the same moment can leave Claude Code unable to open tabs ("Webview is disposed") until the window is reloaded;
   VixTab therefore runs tab actions one at a time. See [troubleshooting](docs/troubleshooting.md).

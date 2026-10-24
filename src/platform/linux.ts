@@ -71,6 +71,28 @@ export const linux: Platform = {
     return runInherit(["nice", "-n", "10", ...cmd]);
   },
 
+  rendererLoad() {
+    const renderers = linux.processes().filter((p) => /--type=renderer/.test(p.cmdline) && /code|electron|cursor/i.test(p.name + p.cmdline));
+    const ticks = (pid: number) => {
+      const m = new Map<string, number>();
+      try {
+        for (const t of readdirSync(`/proc/${pid}/task`)) {
+          const st = readFileSync(`/proc/${pid}/task/${t}/stat`, "utf8");
+          const f = st.slice(st.lastIndexOf(")") + 2).split(" ");
+          m.set(t, Number(f[11]) + Number(f[12])); // utime + stime (fields 14, 15)
+        }
+      } catch {}
+      return m;
+    };
+    const before = renderers.map((r) => ticks(r.pid));
+    Bun.sleepSync(2000);
+    return renderers.map((r, i) => {
+      let max = 0;
+      for (const [t, v] of ticks(r.pid)) max = Math.max(max, v - (before[i].get(t) ?? v));
+      return { pid: r.pid, pct: Math.round(max / 2) }; // 100 ticks/s ⇒ ticks over 2 s / 2 = % of one core
+    });
+  },
+
   vscodeExtensionRoots: () =>
     [".vscode/extensions", ".vscode-server/extensions", ".vscode-insiders/extensions", ".vscode-server-insiders/extensions"].map((d) => join(HOME, d)),
 

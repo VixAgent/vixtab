@@ -108,6 +108,16 @@ export const windows: Platform = {
     return runInherit(cmd);
   },
 
+  rendererLoad() {
+    const r = ps(
+      `$ds = Get-CimInstance Win32_Process -Filter "Name='Code.exe'" | Where-Object { $_.CommandLine -match '--type=renderer' } | ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+$a = @{}; foreach ($p in $ds) { foreach ($t in $p.Threads) { $a["$($p.Id):$($t.Id)"] = $t.TotalProcessorTime.TotalMilliseconds } }
+Start-Sleep -Seconds 2
+foreach ($p in $ds) { $q = Get-Process -Id $p.Id -ErrorAction SilentlyContinue; if (-not $q) { continue }; $m = 0; foreach ($t in $q.Threads) { $k = "$($q.Id):$($t.Id)"; if ($a.ContainsKey($k)) { $v = ($t.TotalProcessorTime.TotalMilliseconds - $a[$k]) / 20; if ($v -gt $m) { $m = $v } } }; "$($q.Id)=$([int]$m)" }`,
+    );
+    return r.out.split(/\r?\n/).map((l) => /^(\d+)=(\d+)$/.exec(l.trim())).filter((m): m is RegExpExecArray => !!m).map((m) => ({ pid: Number(m[1]), pct: Number(m[2]) }));
+  },
+
   vscodeExtensionRoots: () => [".vscode/extensions", ".vscode-insiders/extensions"].map((d) => join(HOME, d)),
 
   addToUserPath(dir) {

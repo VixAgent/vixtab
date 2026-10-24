@@ -44,11 +44,13 @@ function layout() {
 
 const claudeTabs = () => vscode.window.tabGroups.all.flatMap((g) => g.tabs.filter(isClaudeTab).map((t) => ({ t, column: g.viewColumn })));
 
-async function openSession({ session, prompt, focus = false, here = false, label }) {
+// stack: put the tab into the last group instead of a new column (ticket windows keep one group of stacked tabs).
+async function openSession({ session, prompt, focus = false, here = false, stack = false, label }) {
   if (!UUID.test(session || "")) throw new Error("session must be a UUID");
   for (let attempt = 1; ; attempt++) {
     const groups = vscode.window.tabGroups.all;
-    const column = here ? vscode.window.tabGroups.activeTabGroup.viewColumn || 1 : Math.max(...groups.map((g) => g.viewColumn)) + 1;
+    const last = Math.max(...groups.map((g) => g.viewColumn));
+    const column = here ? vscode.window.tabGroups.activeTabGroup.viewColumn || 1 : stack ? last : last + 1;
     // Count tabs by (column, label): Tab objects are not guaranteed to keep their identity between reads.
     const EMPTY = "Claude Code";
     const count = (lab) => claudeTabs().filter((x) => x.column === column && x.t.label === lab).length;
@@ -65,7 +67,7 @@ async function openSession({ session, prompt, focus = false, here = false, label
     }
     if (!label) {
       await sleep(300);
-      if (!here) await vscode.commands.executeCommand("workbench.action.evenEditorWidths");
+      if (!here && !stack) await vscode.commands.executeCommand("workbench.action.evenEditorWidths");
       return { column, layout: layout() };
     }
     // The tab takes its label from the session title once Claude Code has loaded the session. A tab still called
@@ -79,7 +81,7 @@ async function openSession({ session, prompt, focus = false, here = false, label
     // Only ever close a tab that is exactly an empty "Claude Code" conversation that appeared in the new column just now.
     const fresh = !ok && count(EMPTY) > emptyBefore ? claudeTabs().filter((x) => x.column === column && x.t.label === EMPTY).pop() : null;
     if (ok) {
-      if (!here) await vscode.commands.executeCommand("workbench.action.evenEditorWidths");
+      if (!here && !stack) await vscode.commands.executeCommand("workbench.action.evenEditorWidths");
       return { column, labeled: true, attempts: attempt, layout: layout() };
     }
     log(`open ${session}: tab did not show "${label}" (attempt ${attempt}${fresh ? ", an empty conversation opened instead: closing it" : ""})`);
@@ -114,6 +116,10 @@ const ACTIONS = {
   close: closeTab,
   even: async () => {
     await vscode.commands.executeCommand("workbench.action.evenEditorWidths");
+    return { layout: layout() };
+  },
+  join: async () => {
+    await vscode.commands.executeCommand("workbench.action.joinAllGroups");
     return { layout: layout() };
   },
   ping: async () => ({ pid: process.pid }),
@@ -159,6 +165,18 @@ async function handle(name) {
   }
   fs.writeFileSync(`${resultFile}.tmp`, JSON.stringify(result));
   fs.renameSync(`${resultFile}.tmp`, resultFile);
+  // A ticket window whose last Claude tab just closed has done its job: remove its workspace file and close it (after the
+  // result above is written — closing the window ends this extension host).
+  if (result.ok && result.closed && isTicketWindow() && claudeTabs().length === 0 && vscode.workspace.getConfiguration("vixtab").get("closeEmptyTicketWindows", true)) {
+    setTimeout(() => {
+      if (claudeTabs().length) return;
+      log("last Claude tab closed: closing this ticket window");
+      try {
+        fs.unlinkSync(workspaceFile());
+      } catch {}
+      void vscode.commands.executeCommand("workbench.action.closeWindow");
+    }, 1500);
+  }
 }
 const scan = () => {
   try {
@@ -166,10 +184,15 @@ const scan = () => {
   } catch {}
 };
 
+// A ticket window is a VS Code window that VixTab opened from <repo>/.vixtab/windows/tickets-N.code-workspace.
+const workspaceFile = () => (vscode.workspace.workspaceFile && vscode.workspace.workspaceFile.scheme === "file" ? vscode.workspace.workspaceFile.fsPath : null);
+const isTicketWindow = () => /[\\/]\.vixtab[\\/]windows[\\/][^\\/]+\.code-workspace$/i.test(workspaceFile() || "");
+
 function registerWindow(context) {
   fs.mkdirSync(WINDOWS, { recursive: true });
   const folders = (vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath);
-  fs.writeFileSync(`${WINDOW_FILE}.tmp`, JSON.stringify({ pid: process.pid, folders, version: context.extension.packageJSON.version, at: new Date().toISOString() }));
+  const info = { pid: process.pid, folders, version: context.extension.packageJSON.version, at: new Date().toISOString(), kind: isTicketWindow() ? "tickets" : "main", workspaceFile: workspaceFile() };
+  fs.writeFileSync(`${WINDOW_FILE}.tmp`, JSON.stringify(info));
   fs.renameSync(`${WINDOW_FILE}.tmp`, WINDOW_FILE);
 }
 
@@ -304,12 +327,12 @@ function activate(context) {
   item.text = "$(rocket) VixTab";
   item.tooltip = "VixTab: start an orchestrator tab for this folder";
   item.command = "vixtab.orchestrate";
-  const showItem = () => (vscode.workspace.getConfiguration("vixtab").get("statusBar") && (vscode.workspace.workspaceFolders || []).length ? item.show() : item.hide());
+  const showItem = () => (vscode.workspace.getConfiguration("vixtab").get("statusBar") && (vscode.workspace.workspaceFolders || []).length && !isTicketWindow() ? item.show() : item.hide());
   showItem();
   context.subscriptions.push(item, vscode.workspace.onDidChangeConfiguration(showItem), vscode.workspace.onDidChangeWorkspaceFolders(showItem));
 
   const key = `vixtab.setupAsked.${context.extension.packageJSON.version}`;
-  if (needsSetup() && !context.globalState.get(key)) {
+  if (needsSetup() && !isTicketWindow() && !context.globalState.get(key)) {
     void context.globalState.update(key, true);
     void vscode.window
       .showInformationMessage("VixTab: finish setup? It installs the `vixtab` command (~/.vixtab/bin) and two Claude Code skills (~/.claude/skills).", "Set up", "Not now")

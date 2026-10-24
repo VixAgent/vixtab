@@ -28,6 +28,14 @@ export type Config = {
   /** Files that many tickets touch: overlap there is expected, rebase carefully instead of queueing. */
   hotFiles: string[];
   sessions: { max: number; minFreeRamMB: number; maxSwapMB: number; maxCommit: number; maxCpu: number; reserveMB: number };
+  /**
+   * Where ticket tabs go. Every Claude tab of ONE VS Code window runs in that window's single renderer thread: 14 visible columns
+   * drove it to 102 % of a core and froze every session, and even hidden (stacked) tabs keep running — 7 of them reached 91 %.
+   *   auto    : the first `inWindowMax` ticket tabs as columns next to the orchestrator, then ticket windows
+   *   windows : always ticket windows (separate VS Code windows = separate renderers), tabs stacked, `perWindowMax` each
+   *   columns : always new columns in the orchestrator's window
+   */
+  tabs: { mode: "auto" | "windows" | "columns"; inWindowMax: number; perWindowMax: number };
   heavy: { slots: number; memMB: number; headroomMB: number; maxCpu: number; maxCommit: number };
 };
 
@@ -61,7 +69,7 @@ export function loadConfig(cwd = process.cwd()): Config {
   }
   const env = process.env;
   const totalMB = Math.round(totalmem() / 1048576);
-  const s = raw.sessions ?? {}, h = raw.heavy ?? {};
+  const s = raw.sessions ?? {}, h = raw.heavy ?? {}, t = raw.tabs ?? {};
   const remote = raw.remote ?? "origin";
   const homeRaw = env.VIXTAB_HOME ?? raw.home;
   const home = norm(homeRaw ? (isAbsolute(homeRaw) ? homeRaw : resolve(repo, homeRaw)) : join(dirname(repo), `${basename(repo)}.vixtab`));
@@ -90,6 +98,11 @@ export function loadConfig(cwd = process.cwd()): Config {
       maxCpu: num(env.VIXTAB_MAX_CPU, s.maxCpu ?? 0.85),
       // RAM a just-opened session will soon use (it has not grown yet when the next gate check runs).
       reserveMB: num(env.VIXTAB_SESSION_RESERVE_MB, s.reserveMB ?? 1024),
+    },
+    tabs: {
+      mode: (["auto", "windows", "columns"].includes(env.VIXTAB_TAB_MODE ?? "") ? env.VIXTAB_TAB_MODE : t.mode ?? "auto") as Config["tabs"]["mode"],
+      inWindowMax: num(env.VIXTAB_TABS_IN_WINDOW, t.inWindowMax ?? 3),
+      perWindowMax: num(env.VIXTAB_TABS_PER_WINDOW, t.perWindowMax ?? 5),
     },
     heavy: {
       slots: num(env.VIXTAB_HEAVY_SLOTS, h.slots ?? Math.max(2, Math.floor(cpus().length / 4))),

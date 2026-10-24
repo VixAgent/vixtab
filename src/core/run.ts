@@ -32,11 +32,24 @@ export function gitBash(): string | null {
   return null;
 }
 
-/** A shell command line from the config ("bun test", "npm run check && npm test"). */
+const posixBash = () => (existsSync("/bin/bash") ? "/bin/bash" : Bun.which("bash"));
+
+/**
+ * A shell command line from the config ("bun test", "npm run check && npm test"), always with pipefail: without it
+ * `bun test | tail -3` exits with tail's code and red tests would be pushed. (Ubuntu's sh is dash, which has no pipefail.)
+ */
 export function shellCommand(line: string): string[] {
-  if (!IS_WIN) return ["sh", "-c", line];
-  const bash = gitBash();
-  return bash ? [bash, "-c", line] : ["cmd.exe", "/d", "/s", "/c", line];
+  const bash = IS_WIN ? gitBash() : posixBash();
+  if (bash) return [bash, "-o", "pipefail", "-c", line];
+  return IS_WIN ? ["cmd.exe", "/d", "/s", "/c", line] : ["sh", "-c", line];
+}
+
+/** A test command given after `--`: `bash -c '…'` / `sh -c '…'` get pipefail too (sh becomes bash where sh lacks it). */
+export function withPipefail(cmd: string[]): string[] {
+  const m = /^(.*[\\/])?(bash|sh)(\.exe)?$/i.exec(cmd[0] ?? "");
+  if (!m || cmd[1] !== "-c") return cmd;
+  const shell = m[2].toLowerCase() === "sh" && !IS_WIN ? posixBash() : cmd[0];
+  return shell ? [shell, "-o", "pipefail", ...cmd.slice(1)] : cmd;
 }
 
 export const git = (cwd: string, ...args: string[]) => run(["git", ...args], cwd);

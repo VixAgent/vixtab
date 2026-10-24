@@ -23,7 +23,9 @@ Want to see it first? Run *VixTab: Create playground* — a safe sandbox with fi
 
 - **Context-saving orchestration:** each ticket runs in a new, small session; the orchestrator reads one-line results and sleeps
   on a background waiter.
-- **A tab per ticket:** labeled with the ticket id, in a new column to the right, focus kept, columns evened, closed by label.
+- **A tab per ticket, a renderer per window:** labeled with the ticket id, focus kept; the first three as columns next to the
+  orchestrator, the next ones stacked in ticket windows (five Claude tabs each), because all tabs of one window share one
+  renderer thread.
 - **Parallel without conflicts:** atomic locks, worktree per ticket, one merge at a time, tests after the rebase, red never lands.
 - **Resource gates:** tabs open only when RAM, swap, commit charge and CPU have room; heavy steps use elastic, memory-capped slots.
 - **Linux and Windows.**

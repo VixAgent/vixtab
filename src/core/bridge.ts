@@ -5,13 +5,15 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, s
 import { join } from "node:path";
 import { platform } from "../platform/index.ts";
 import { alive, ancestors } from "./proc.ts";
-import { HOME, fail, isInside, pathKey, sleep } from "./util.ts";
+import { run } from "./run.ts";
+import { HOME, IS_WIN, fail, isInside, pathKey, sleep } from "./util.ts";
 
 export const CACHE = join(HOME, ".cache", "vixtab");
 export const COMMANDS = join(CACHE, "commands");
 export const WINDOWS = join(CACHE, "windows");
 
-export type WindowInfo = { pid: number; folders: string[]; version: string; at: string };
+/** kind "tickets" = a ticket window opened by VixTab (workspace file under <repo>/.vixtab/windows/). */
+export type WindowInfo = { pid: number; folders: string[]; version: string; at: string; kind?: "main" | "tickets"; workspaceFile?: string | null };
 
 export function windows(): WindowInfo[] {
   if (!existsSync(WINDOWS)) return [];
@@ -47,6 +49,65 @@ export function findWindow(cwd = process.cwd()): number {
   fail(`several VS Code windows run VixTab; set VIXTAB_EXT_HOST_PID to one of: ${ws.map((w) => `${w.pid} (${w.folders.join(", ")})`).join("; ")}`, 7);
 }
 export const windowInfo = (pid: number) => windows().find((w) => w.pid === pid) ?? null;
+
+/**
+ * The orchestrator's window: VIXTAB_ORCHESTRATOR_WINDOW (when the orchestrator drives VixTab from outside VS Code, e.g. over SSH
+ * or Remote Control), else the registered window this process runs in (its extension host is one of our ancestors), else 0.
+ * Unlike VIXTAB_EXT_HOST_PID it does not pin tabs to that window: the tabs policy still applies.
+ */
+export function callerWindow(): number {
+  if (process.env.VIXTAB_ORCHESTRATOR_WINDOW) return Number(process.env.VIXTAB_ORCHESTRATOR_WINDOW);
+  const pids = new Set(windows().map((w) => w.pid));
+  return pids.size ? (ancestors(process.pid, platform.processes()).find((p) => pids.has(p)) ?? 0) : 0;
+}
+
+/** Claude tabs in a window (-1 = the window did not answer). */
+export async function claudeTabCount(win: number): Promise<number> {
+  try {
+    return (await layout(win)).flatMap((g) => g.tabs).filter((t) => t.claude).length;
+  } catch {
+    return -1;
+  }
+}
+
+/** Windows (any kind) that show a Claude tab with exactly this label. */
+export async function windowsWithLabel(label: string): Promise<number[]> {
+  const out: number[] = [];
+  for (const w of windows()) {
+    try {
+      if ((await layout(w.pid)).some((g) => g.tabs.some((t) => t.claude && t.label === label))) out.push(w.pid);
+    } catch {}
+  }
+  return out;
+}
+
+/**
+ * Open a new ticket window on `repo`: VS Code window from a workspace file under <repo>/.vixtab/windows/ (kept out of git through
+ * .git/info/exclude). The file must live inside the trusted repository — a workspace file elsewhere opens in Restricted Mode, where
+ * Claude Code and VixTab do not run. A new file each time: `code -n` on a workspace that is already open only focuses it.
+ */
+export async function openTicketWindow(repo: string, waitMs = 60_000): Promise<number> {
+  const before = new Set(windows().map((w) => w.pid));
+  const dir = join(repo, ".vixtab", "windows");
+  mkdirSync(dir, { recursive: true });
+  const exclude = join(repo, ".git", "info", "exclude");
+  try {
+    const cur = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
+    if (!cur.split(/\r?\n/).includes("/.vixtab/")) writeFileSync(exclude, cur + (cur && !cur.endsWith("\n") ? "\n" : "") + "/.vixtab/\n");
+  } catch {}
+  let n = 1;
+  while (existsSync(join(dir, `tickets-${n}.code-workspace`))) n++;
+  const file = join(dir, `tickets-${n}.code-workspace`);
+  writeFileSync(file, JSON.stringify({ folders: [{ path: "../.." }], settings: { "window.title": `VixTab tickets ${n} — \${activeEditorShort}` } }, null, 2) + "\n");
+  const code = Bun.which("code") ?? fail("the `code` command is not on PATH (VS Code: Shell Command: Install 'code' command)", 7);
+  const r = run(IS_WIN ? ["cmd.exe", "/d", "/c", code, "-n", file] : [code, "-n", file]);
+  if (r.code !== 0) fail(`code -n failed: ${(r.err || r.out).trim()}`, 7);
+  for (const t = Date.now(); Date.now() - t < waitMs; await sleep(500)) {
+    const w = windows().find((x) => !before.has(x.pid) && x.folders.some((f) => pathKey(f) === pathKey(repo)));
+    if (w) return w.pid;
+  }
+  fail(`the new ticket window (${file}) did not register within ${waitMs / 1000} s (a trust prompt in VS Code? the screen locked?)`, 7);
+}
 
 /** Wait until a window with exactly this folder registers (after `code -n <folder>`). */
 export async function waitForWindow(folder: string, ms = 45_000): Promise<number | null> {

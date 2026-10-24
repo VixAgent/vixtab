@@ -20,6 +20,7 @@ Ticket and instructions: $ARGUMENTS (or the message you received). `vt` = `~/.vi
    Rebase conflict ⇒ resolve in the worktree, `git add <files>`, `GIT_EDITOR=true git rebase --continue`, merge again.
    A message says main changed your files ⇒ rebase now (`git fetch -q && git rebase <remote>/<branch>`) and re-run the tests.
 6. **Answer.** Replace the placeholder under `## Answer` in the ticket file (in the worktree): commits, tests run, notes, open
-   points. Commit it, then `vt ticket done <ID>`: it pushes the answer, marks ✅ DONE, stops processes in the worktree and removes it.
+   points. Commit it, then `cd` back to the repository root and run `vt ticket done <ID>`: it pushes the answer, marks ✅ DONE,
+   stops processes in the worktree and removes it (Windows cannot delete a folder that is your shell's current directory).
 7. **Stuck or unclear?** `vt ticket ask <ID> "<question>"`, then stop and wait: the answer arrives as a message. Continue from there.
 8. **Last line** of your final message, exactly: `DONE — THIS SESSION CAN BE CLOSED (<ID>)`

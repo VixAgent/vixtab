@@ -32,6 +32,19 @@ Claude Code versions differ in how cross-session messages address a session: 2.1
 Claude Code could not load the session yet (busy window). The extension detects the unlabeled tab, closes it, and retries up to
 three times. If it still fails, `session open` exits with code 4.
 
+## All tabs lag although the machine is idle
+
+All Claude tabs of one VS Code window run in that window's renderer thread. `vixtab session count` prints the busiest renderer
+thread of each local VS Code window; around 90 % or more means that window is saturated. Use ticket windows (`"tabs": {"mode":
+"windows"}` or a lower `perWindowMax`), and *View: Join All Editor Groups* (`vixtab tab join`) to stack the columns of an
+overloaded window. Do not reload a window that runs sessions: reloading restarts every Claude session in it.
+
+## A ticket window does not open
+
+`vixtab tab new-window` runs `code -n <repo>/.vixtab/windows/tickets-N.code-workspace` and waits 60 s for the new window to
+register. Check that the `code` command works, that VS Code is not waiting on a dialog (or a locked screen), and that the
+repository folder is trusted in VS Code (a workspace in an untrusted folder opens in Restricted Mode, without extensions).
+
 ## Tests run in the wrong shell on Windows
 
 Test commands from `vixtab.config.json` (`"test"`) run in Git Bash. `C:\Windows\System32\bash.exe` is the WSL launcher and would

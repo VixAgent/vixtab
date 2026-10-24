@@ -1,5 +1,5 @@
 // vixtab ticket list | new | show | claim | merge | done | release | ask | answer | overlap
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFileSync } from "node:fs";
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { type Args, has, parseArgs, str } from "../core/args.ts";
@@ -12,7 +12,7 @@ import { commitOnMain, pushFromWorktree } from "../core/mainline.ts";
 import { pickPort } from "../core/ports.ts";
 import { printProcesses, processesInside, stopPids } from "../core/proc.ts";
 import { git, gitOk, shellCommand } from "../core/run.ts";
-import { fail, isReservedName, native, nowIso, sleep, slugify, today } from "../core/util.ts";
+import { IS_WIN, fail, isInside, isReservedName, native, nowIso, sleep, slugify, today } from "../core/util.ts";
 
 export const HELP = `vixtab ticket — the board of tickets that parallel sessions work on
 
@@ -65,23 +65,56 @@ async function stopInside(W: string, listOnly = false): Promise<boolean> {
 }
 
 export async function removeWorktree(c: Config, W: string, id: string): Promise<void> {
+  // Windows cannot delete a folder that is the current directory of any process — this one included.
+  if (isInside(process.cwd(), W)) process.chdir(c.repo);
+  if (IS_WIN && process.env.PWD && isInside(process.env.PWD, W))
+    console.log(`Warning: the calling shell stands inside ${native(W)}; its empty folder stays until the shell leaves (run done/release from the repository root).`);
   (await stopInside(W)) || console.log(`Warning: processes still run inside ${native(W)} (see above) — removing the worktree anyway.`);
   for (let attempt = 1; ; attempt++) {
     const r = git(c.repo, "worktree", "remove", "--force", W);
     if (r.code === 0) break;
-    // A remove that failed half way (a file still locked on Windows) leaves the folder but no worktree entry.
+    // A remove that failed half way (a file still locked on Windows) can delete the worktree's .git file: git no longer knows
+    // the worktree. Prune it and clean what is left below.
     if (/is not a working tree/.test(r.err)) {
-      try {
-        rmSync(W, { recursive: true, force: true });
-      } catch {}
       git(c.repo, "worktree", "prune");
-      if (!existsSync(W)) break;
+      console.log(`Warning: the worktree was half removed (${r.err.trim().split("\n")[0]}) — pruned, cleaning the rest.`);
+      break;
     }
-    if (attempt >= 5) fail(`git worktree remove ${native(W)} failed:\n${r.err}`);
-    await sleep(1000); // Windows keeps files locked for a moment after a process exits
+    if (attempt >= 15) fail(`git worktree remove ${native(W)} failed:\n${r.err}`);
+    // Files stay locked a moment after a process exits, or a watcher respawned: stop what runs inside again now and then.
+    if (attempt % 3 === 0) await stopInside(W);
+    await sleep(2000);
   }
   git(c.repo, "branch", "-q", "-D", branchOf(id));
+  if (existsSync(W)) cleanLeftovers(W);
   console.log(`Removed worktree and branch ${branchOf(id)}.`);
+}
+
+/**
+ * What `git worktree remove` can leave behind on Windows: junctions (bun's node_modules links) and empty folders. Links are
+ * unlinked — never followed, their targets stay intact — empty folders removed; real files are kept and reported.
+ */
+function cleanLeftovers(W: string): void {
+  let files = 0;
+  const walk = (d: string): boolean => {
+    let empty = true;
+    for (const name of readdirSync(d)) {
+      const p = join(d, name), st = lstatSync(p);
+      if (st.isSymbolicLink()) unlinkSync(p);
+      else if (st.isDirectory()) empty = walk(p) && empty;
+      else (files++, (empty = false));
+    }
+    if (!empty) return false;
+    try {
+      rmdirSync(d);
+      return true;
+    } catch (e: any) {
+      console.log(`Warning: could not remove ${native(d)} (${e?.code ?? e}) — it is empty; remove it later.`);
+      return false;
+    }
+  };
+  walk(W);
+  if (files) console.log(`Warning: ${native(W)} still has ${files} file(s) outside git (kept) — check them, then delete the folder.`);
 }
 
 /** Board-only edit on main: status cell + ticket status line (+ optional extra edit of the ticket text). */

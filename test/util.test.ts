@@ -52,3 +52,17 @@ describe("locks", () => {
     expect(L.tryTake("y")).not.toBeNull();
   });
 });
+
+describe("pipefail", () => {
+  test("test commands from the config run with pipefail", async () => {
+    const { shellCommand } = await import("../src/core/run.ts");
+    const p = Bun.spawnSync(shellCommand("false | true"));
+    expect(p.exitCode).not.toBe(0);
+  });
+  test("bash -c / sh -c after -- get pipefail", async () => {
+    const { withPipefail } = await import("../src/core/run.ts");
+    expect(withPipefail(["bash", "-c", "x"])).toEqual(["bash", "-o", "pipefail", "-c", "x"]);
+    expect(withPipefail(["bun", "test"])).toEqual(["bun", "test"]);
+    if (process.platform !== "win32") expect(Bun.spawnSync(withPipefail(["sh", "-c", "false | true"])).exitCode).not.toBe(0);
+  });
+});

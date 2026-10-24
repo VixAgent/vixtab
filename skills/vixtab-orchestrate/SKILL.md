@@ -30,7 +30,8 @@ For each ready ticket (its `After` tickets are done):
    and ask the user to reload the VS Code window (that restarts every session in it, so they choose when); otherwise retry once.
 2. SendMessage to NAME, one line: `Work on ticket <ID> with the vixtab-ticket skill (board: <board folder>).` If NAME is
    not reachable, try the `label=` and then the `auto_name=` value (Claude Code versions differ; ListAgents shows the right one).
-3. Keep one line per ticket in your notes: ID, NAME, PID.
+3. Keep one line per ticket in your notes: ID, NAME, PID. Where the tab opens (a column next to you, or a ticket window) is
+   decided by VixTab — do not move tabs around.
 Then start ONE background waiter (run_in_background): `vt wait T-001:PID T-002:PID …`. Do not poll, sleep or Monitor; you are
 notified when it exits. Also start `vt watch ram` in the background once.
 
@@ -45,6 +46,8 @@ notified when it exits. Also start `vt watch ram` in the background once.
 - `vt watch ram` exited with ALERT ⇒ stop opening; tell the most recently opened session that runs a heavy step to pause at a
   safe point; resume when `vt session count` says `open: yes`.
 - `vt ticket overlap` lists files that two active tickets change, whenever you want a full picture.
+- Sessions lag although RAM and CPU look fine ⇒ `vt session count`: a renderer near 90 % means that window holds too many
+  Claude tabs; tell the user (VixTab already spreads new tabs over ticket windows).
 
 ## 4. Keep your own context small
 - Trust the waiter and `vt ticket list`; do not read worker transcripts or diffs unless a check fails.

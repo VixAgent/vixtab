@@ -33,29 +33,54 @@ function window_(s: Sketch, x: number, y: number, w: number, h: number, cols: Co
   });
 }
 
-export function layoutFlow(theme: Theme) {
-  const s = new Sketch(1280, 390, theme);
-  s.text(640, 44, "How VixTab lays out the tabs", 30, { anchor: "middle" });
-  const fw = 270, fh = 220, y = 80, xs = [24, 342, 660, 978];
-  const O: Col = { label: "Orchestrator", hue: "purple", orchestrator: true };
-  window_(s, xs[0], y, fw, fh, [{ ...O, status: ["planning", "purple"] }]);
-  window_(s, xs[1], y, fw, fh, [O, { label: "T-001", hue: "blue", status: ["DOING", "blue"] }]);
-  window_(s, xs[2], y, fw, fh, [O, { label: "T-001", hue: "blue", status: ["DOING", "blue"] }, { label: "T-002", hue: "orange", status: ["DOING", "orange"] }, { label: "T-003", hue: "green", status: ["DOING", "green"] }]);
-  window_(s, xs[3], y, fw, fh, [O, { label: "T-002", hue: "orange", status: ["DOING", "orange"] }, { label: "T-003", hue: "green", status: ["DONE", "green"], done: true }]);
-  for (let i = 0; i < 3; i++) s.arrow(xs[i] + fw + 6, y + fh / 2, xs[i + 1] - 8, y + fh / 2, { hue: "ink", width: 2.2, bend: -10 });
-  const cap: [string, string][] = [
-    ["1. You start one orchestrator tab", "and type the goal"],
-    ["2. vixtab session open T-001", "new column on the right, focus stays"],
-    ["3. More tickets, more columns", "widths evened, label = ticket id"],
-    ["4. T-001 is done: its tab closes", "the rest are evened again"],
-  ];
-  cap.forEach(([a, b], i) => {
-    s.text(xs[i] + fw / 2, y + fh + 40, a, 18, { anchor: "middle" });
-    s.text(xs[i] + fw / 2, y + fh + 64, b, 16, { anchor: "middle", muted: true });
+/** A ticket window: one group, Claude tabs stacked (a tab strip), one renderer of its own. */
+function stackWindow(s: Sketch, x: number, y: number, w: number, h: number, tabs: [string, Hue][], active: number, title: string) {
+  s.box(x, y, w, h, { hue: "ink", fill: "paper", r: 12, width: 2 });
+  s.line(x, y + 24, x + w, y + 24, { hue: "ink", width: 1.3 });
+  for (let i = 0; i < 3; i++) s.ellipse(x + 14 + i * 12, y + 12, 7, 7, { hue: (["red", "yellow", "green"] as Hue[])[i], fill: true, width: 1 });
+  s.text(x + 54, y + 17, title, 12, { muted: true, maxWidth: w - 60 });
+  const tw = Math.min(70, (w - 20) / tabs.length);
+  tabs.forEach(([label, hue], i) => {
+    const tx = x + 10 + i * tw;
+    s.box(tx, y + 32, tw - 4, 24, { hue, fill: i === active, r: 6, width: i === active ? 1.8 : 1.2 });
+    s.text(tx + (tw - 4) / 2, y + 49, label, 13, { hue, anchor: "middle", maxWidth: tw - 10 });
   });
-  return s.svg("How VixTab lays out the tabs: one orchestrator column, one new column per ticket, closed when done");
+  const [, hue] = tabs[active];
+  s.box(x + 10, y + 60, w - 20, h - 70, { hue, fill: true, r: 8 });
+  s.scribble(x + 20, y + 80, w - 40, 2);
 }
 
+export function layoutFlow(theme: Theme) {
+  const s = new Sketch(1280, 450, theme);
+  s.text(640, 44, "How VixTab lays out the tabs", 30, { anchor: "middle" });
+  const O: Col = { label: "Orchestrator", hue: "purple", orchestrator: true };
+  const y = 78;
+  // 1. the orchestrator alone
+  window_(s, 20, y, 220, 220, [{ ...O, status: ["planning", "purple"] }]);
+  // 2. first tickets as columns
+  window_(s, 282, y, 300, 220, [O, { label: "T-001", hue: "blue", status: ["DOING", "blue"] }, { label: "T-002", hue: "orange", status: ["DOING", "orange"] }, { label: "T-003", hue: "green", status: ["DOING", "green"] }]);
+  // 3. more tickets: a ticket window with stacked tabs
+  window_(s, 624, y, 300, 150, [O, { label: "T-001", hue: "blue" }, { label: "T-002", hue: "orange" }, { label: "T-003", hue: "green" }]);
+  stackWindow(s, 700, y + 100, 240, 150, [["T-004", "yellow"], ["T-005", "red"], ["T-006", "blue"]], 0, "VixTab tickets 1");
+  // 4. done: tabs close
+  window_(s, 980, y, 280, 150, [O, { label: "T-002", hue: "orange" }, { label: "T-003", hue: "green", status: ["DONE", "green"], done: true }]);
+  stackWindow(s, 1036, y + 100, 224, 150, [["T-004", "yellow"], ["T-006", "blue"]], 0, "VixTab tickets 1");
+  s.arrow(246, y + 110, 276, y + 110, { width: 2.2 });
+  s.arrow(588, y + 110, 618, y + 110, { width: 2.2 });
+  s.arrow(946, y + 110, 976, y + 110, { width: 2.2 });
+  const cap: [number, string, string][] = [
+    [130, "1. One orchestrator tab", "type the goal"],
+    [432, "2. First tickets: new columns", "focus stays, widths evened"],
+    [780, "3. More tickets: a ticket window", "stacked tabs, its own renderer"],
+    [1120, "4. Done: its tab closes", "the others keep working"],
+  ];
+  for (const [x, a2, b2] of cap) {
+    s.text(x, y + 300, a2, 18, { anchor: "middle" });
+    s.text(x, y + 324, b2, 16, { anchor: "middle", muted: true });
+  }
+  s.text(640, y + 364, "All Claude tabs of one VS Code window share one renderer thread — so after 3 columns, tickets go to ticket windows, 5 tabs each.", 16, { anchor: "middle", muted: true });
+  return s.svg("How VixTab lays out the tabs: first tickets as columns next to the orchestrator, later ones stacked in ticket windows");
+}
 
 export function hero(theme: Theme) {
   const s = new Sketch(1280, 560, theme);
@@ -65,7 +90,7 @@ export function hero(theme: Theme) {
     { label: "T-001", hue: "blue", status: ["DOING", "blue"] },
     { label: "T-002", hue: "orange", status: ["DOING", "orange"] },
     { label: "T-003", hue: "green", status: ["DONE", "green"], done: true },
-    { label: "T-004", hue: "gray", ghost: true, lines: ["queued:", "waits for RAM", "or for T-002"] },
+    { label: "T-004 …", hue: "gray", ghost: true, lines: ["next tickets go to", "a ticket window:", "own renderer,", "5 tabs each"] },
   ], { title: "VS Code — your-repo" });
   const notes: [number, number, string, string][] = [
     [330, 475, "fresh session, own column,", "own git worktree and branch"],

@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Config, mainRef } from "./config.ts";
 import { Locks } from "./locks.ts";
-import { git, gitOk, run, runInherit } from "./run.ts";
+import { git, gitOk, run, runInherit, withPipefail } from "./run.ts";
 import { VixError, fail, native } from "./util.ts";
 
 export const locksOf = (c: Config) => new Locks(c.locks);
@@ -21,8 +21,9 @@ export async function pushFromWorktree(c: Config, W: string, test: string[] = []
       fail(`Rebase conflict. Resolve it in ${native(W)} (git add <files>; GIT_EDITOR=true git rebase --continue), then run merge again.`, 4);
     afterRebase?.();
     if (test.length) {
-      console.log(`== Tests after rebase: ${test.join(" ")}`);
-      const code = await runInherit(test, W);
+      const cmd = withPipefail(test);
+      console.log(`== Tests after rebase: ${cmd.join(" ")}`);
+      const code = await runInherit(cmd, W);
       if (code !== 0) fail(`Tests failed (exit ${code}) — NOT pushed to ${c.branch}.`, code);
     }
     gitOk(W, "push", "-q", c.remote, `HEAD:${c.branch}`);

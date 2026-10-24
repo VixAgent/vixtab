@@ -16,9 +16,9 @@ import T5 from "../../playground/tickets/T-005.md" with { type: "text" };
 import { has, parseArgs, str } from "../core/args.ts";
 import { waitForWindow, windows } from "../core/bridge.ts";
 import { addRow, boardReadme, renderTicket, ticketBodyTemplate } from "../core/board.ts";
-import { git, gitOk, run } from "../core/run.ts";
+import { git, gitBash, gitOk, run } from "../core/run.ts";
 import { selfArgv, selfLine } from "../core/self.ts";
-import { HOME, fail, native, norm, parseSizeMB, pathKey, sleep } from "../core/util.ts";
+import { HOME, IS_WIN, fail, native, norm, parseSizeMB, pathKey, sleep } from "../core/util.ts";
 import { platform } from "../platform/index.ts";
 import { BIN_DIR } from "./setup.ts";
 
@@ -204,11 +204,12 @@ export async function demoBoard(dir: string | undefined, keep: boolean): Promise
     expect('the waiter wakes up with "rebase T-004 recipes/INDEX.md"', /^rebase T-004 recipes\/INDEX\.md/m.test(woke), woke);
     if (waiter.exitCode === null) waiter.kill();
 
-    step("T-004 merges its broken recipe");
-    const red = vt(["ticket", "merge", "T-004"], P);
+    step("T-004 merges its broken recipe, with the test output piped through tail");
+    const bash = IS_WIN ? gitBash() : existsSync("/bin/bash") ? "/bin/bash" : null;
+    const red = bash ? vt(["ticket", "merge", "T-004", "--", bash, "-c", `${selfLine()} playground check | tail -3`], P) : vt(["ticket", "merge", "T-004"], P);
     show(red);
     gitOk(P, "fetch", "-q", "origin", "main");
-    expect("tests fail after the rebase and NOTHING is pushed", red.code !== 0 && git(P, "cat-file", "-e", "origin/main:recipes/crepes.md").code !== 0, red.out);
+    expect("tests fail after the rebase (pipefail: tail does not hide it) and NOTHING is pushed", red.code !== 0 && git(P, "cat-file", "-e", "origin/main:recipes/crepes.md").code !== 0, red.out);
 
     step("T-004 fixes the recipe and merges again");
     write("T-004", "recipes/crepes.md", "# Crêpes\n\n## Ingredients\n\n- 125 g flour\n- 2 eggs\n- 250 ml milk\n\n## Steps\n\n1. Whisk into a thin batter, rest 30 minutes.\n2. Cook thin layers in a buttered pan.\n");

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0 — 2026-10-24
+
+- **Ticket windows.** All Claude tabs of one VS Code window share one renderer thread (14 visible columns: 102 % of a core,
+  every session frozen; 7 stacked tabs: 91 %). New `"tabs"` policy: `auto` (default — 3 columns next to the orchestrator,
+  then ticket windows with 5 stacked tabs each), `windows`, `columns`. Ticket windows open from
+  `<repo>/.vixtab/windows/tickets-N.code-workspace` (inside the trusted repo, excluded from git). `session close` finds tabs in
+  every window; a ticket window closes itself after its last Claude tab; `session count` lists windows, their Claude tabs and the
+  busiest renderer thread; `tab join`, `tab new-window`; `VIXTAB_ORCHESTRATOR_WINDOW` for driving VixTab from outside VS Code.
+- Test commands always run with `pipefail` (`bash -o pipefail`; Ubuntu dash has none); `-- bash -c …` / `-- sh -c …` too.
+- Worktree removal on Windows: leaves the worktree first, stops processes again between attempts (15 tries), unlinks leftover
+  junctions without following them, keeps real files and reports them.
+- `session open` waits up to 45 s for the tab Claude process on a busy machine.
+
 ## 0.1.0 — 2026-10-24
 
 First public release.

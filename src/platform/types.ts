@@ -27,6 +27,11 @@ export interface Platform {
   vscodeExtensionRoots(): string[];
   readonly claudeBinary: string;
   readonly exeSuffix: string;
+  /**
+   * Busiest thread of each local VS Code renderer process (% of one core over ~2 s). All Claude tabs of a window run in that
+   * window's renderer; ~90 % and more means its tabs lag. Empty when the renderers are not on this machine (VS Code Remote).
+   */
+  rendererLoad(): { pid: number; pct: number }[];
   /** Make `dir` part of the user's PATH for new shells; returns a human-readable note. */
   addToUserPath(dir: string): string;
 }
