@@ -1,7 +1,7 @@
 // VixTab VS Code extension.
 // 1. Bridge: executes tab commands that the `vixtab` CLI writes to ~/.cache/vixtab/commands/<pid>-<id>.cmd.json (pid = this
 //    window's extension host), answering in <pid>-<id>.result.json. The window registers in ~/.cache/vixtab/windows/<pid>.json.
-// 2. UI: status bar button and commands to start an orchestrator tab, set up the CLI, add the Claude Code skills to the repository being orchestrated, run the doctor,
+// 2. UI: status bar button and commands to start an orchestrator tab, set up the CLI and the Claude Code skills (every project, or per repository), run the doctor,
 //    and create a playground. The CLI ships inside this extension (bin/), built for the platform of the .vsix.
 const vscode = require("vscode");
 const fs = require("node:fs");
@@ -235,18 +235,36 @@ async function pickFolder() {
   return pick ? pick.f.uri.fsPath : null;
 }
 
-// Only the CLI is installed machine-wide. The Claude Code skills go into each repository the user orchestrates
-// (<repo>/.claude/skills, kept out of git): sessions of other projects never see them.
+// Skills scope (the user's choice): "allProjects" (default) = skills in ~/.claude/skills, every Claude Code session of every
+// project can use VixTab; "perProject" = only the repositories the user orchestrates get them (<repo>/.claude/skills, kept out
+// of git). The CLI saves the choice in ~/.vixtab/config.json; the setting wins when the user has set it explicitly.
 const needsSetup = () => !(fs.existsSync(INSTALLED) || fs.existsSync(path.join(os.homedir(), ".vixtab", "bin", "vixtab")));
+const PREFS = path.join(os.homedir(), ".vixtab", "config.json");
+function scope() {
+  const s = vscode.workspace.getConfiguration("vixtab").inspect("skillsScope");
+  const explicit = (s && (s.workspaceFolderValue || s.workspaceValue || s.globalValue)) || null;
+  if (explicit) return explicit === "perProject" ? "project" : "global";
+  try {
+    const saved = JSON.parse(fs.readFileSync(PREFS, "utf8")).skillsScope;
+    if (saved === "project" || saved === "global") return saved;
+  } catch {}
+  return "global";
+}
 
-async function setup(silent) {
-  const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "VixTab: setting up…" }, () => runCli(["setup"]));
+async function setup(silent, chosen) {
+  const sc = chosen || scope();
+  const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "VixTab: setting up…" }, () => runCli(["setup", "--scope", sc]));
   if (r.code !== 0) {
     out.show(true);
     vscode.window.showErrorMessage("VixTab setup failed — see the VixTab output.");
     return false;
   }
-  if (!silent) vscode.window.showInformationMessage("VixTab is ready: the vixtab command is installed. Click 'VixTab' in the status bar of a repository to start orchestrating there.");
+  if (!silent)
+    vscode.window.showInformationMessage(
+      sc === "global"
+        ? "VixTab is ready for every project: click 'VixTab' in the status bar of any repository, or ask Claude Code to use VixTab."
+        : "VixTab is ready: click 'VixTab' in the status bar of a repository — that repository gets the skills, other projects are untouched.",
+    );
   return true;
 }
 
@@ -254,10 +272,10 @@ async function orchestrate() {
   const folder = await pickFolder();
   if (!folder) return;
   if (needsSetup() && !(await setup(true))) return;
-  const sk = await runCli(["skills", "install"], folder);
+  const sk = await runCli(scope() === "global" ? ["skills", "install", "--global"] : ["skills", "install"], folder);
   if (sk.code !== 0) {
     out.show(true);
-    vscode.window.showErrorMessage(`VixTab: could not add the Claude Code skills to ${folder} (is it a git repository?) — see the VixTab output.`);
+    vscode.window.showErrorMessage(`VixTab: could not install the Claude Code skills for ${folder} (is it a git repository?) — see the VixTab output.`);
     return;
   }
   const taken = new Set(vscode.window.tabGroups.all.flatMap((g) => g.tabs).filter(isClaudeTab).map((t) => t.label));
@@ -336,12 +354,31 @@ function activate(context) {
   showItem();
   context.subscriptions.push(item, vscode.workspace.onDidChangeConfiguration(showItem), vscode.workspace.onDidChangeWorkspaceFolders(showItem));
 
+  // Changing the scope setting applies it at once (skills installed for every project, or removed from ~/.claude/skills).
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      // Every window gets the event; the focused one (where the setting was changed) applies it.
+      if (!e.affectsConfiguration("vixtab.skillsScope") || needsSetup() || !vscode.window.state.focused) return;
+      void runCli(["skills", "scope", scope()]).then((r) => (r.code === 0 ? vscode.window.setStatusBarMessage(`VixTab: skills scope = ${scope() === "global" ? "every project" : "only orchestrated repositories"}`, 8000) : out.show(true)));
+    }),
+  );
+
   const key = `vixtab.setupAsked.${context.extension.packageJSON.version}`;
   if (needsSetup() && !isTicketWindow() && !context.globalState.get(key)) {
     void context.globalState.update(key, true);
+    const all = "Set up for every project", some = "Only projects I choose";
     void vscode.window
-      .showInformationMessage("VixTab: finish setup? It installs the `vixtab` command (~/.vixtab/bin). Nothing changes in your projects until you click VixTab in one of them.", "Set up", "Not now")
-      .then((a) => a === "Set up" && setup(false));
+      .showInformationMessage(
+        "VixTab: finish setup? It installs the `vixtab` command (~/.vixtab/bin) and the Claude Code skills — for every project (any Claude Code session can then use VixTab), or only for the repositories where you click VixTab. You can change this later in Settings ▸ VixTab: Skills Scope.",
+        all,
+        some,
+        "Not now",
+      )
+      .then(async (a) => {
+        if (a !== all && a !== some) return;
+        await vscode.workspace.getConfiguration("vixtab").update("skillsScope", a === all ? "allProjects" : "perProject", vscode.ConfigurationTarget.Global);
+        await setup(false, a === all ? "global" : "project");
+      });
   }
   log(`VixTab ${context.extension.packageJSON.version} active in window ${process.pid}`);
 }

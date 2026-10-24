@@ -6,7 +6,7 @@ import { boardReadme, ticketBodyTemplate } from "../core/board.ts";
 import { findRepo, loadConfig, mainRef } from "../core/config.ts";
 import { commitOnMain } from "../core/mainline.ts";
 import { git } from "../core/run.ts";
-import { installProjectSkills } from "../core/skills.ts";
+import { ensureSkillsFor } from "../core/skills.ts";
 import { native } from "../core/util.ts";
 
 export const HELP = `vixtab init [--board tickets] [--test "<command>"] [--push]
@@ -36,7 +36,7 @@ export async function init(argv: string[]): Promise<void> {
     }
   }
   console.log(Object.keys(created).length ? `Created: ${Object.keys(created).join(", ")}` : "Already initialized (nothing created).");
-  for (const n of installProjectSkills(repo)) console.log(n);
+  for (const n of ensureSkillsFor(repo)) console.log(n);
   if (!has(a, "push")) return void console.log(`Next: review the files, then run: vixtab init --push   (or commit them yourself)`);
   const files: Record<string, string> = {};
   for (const p of ["vixtab.config.json", `${c.board}/README.md`, `${c.board}/TEMPLATE.md`]) files[p] = readFileSync(join(repo, p), "utf8");

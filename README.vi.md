@@ -54,14 +54,15 @@ worktree git riêng và vào nhánh `main` qua hàng đợi gộp có chạy tes
 
 1. **Cài extension:** trong VS Code tìm **VixTab** (`phanthaitrung.vixtab`), hoặc tải tệp `.vsix` theo hệ điều hành ở trang
    [Releases](https://github.com/VixAgent/vixtab/releases). Extension Claude Code được cài kèm nếu máy chưa có.
-2. **Bấm "Set up"** ở thông báo (hoặc *VixTab: Set up*): chép chương trình `vixtab` vào `~/.vixtab/bin` và thêm vào PATH.
-   Bước này chưa đụng tới dự án nào.
-3. **Mở repo, bấm "VixTab"** ở thanh trạng thái: chỉ repo này được cài 2 skill Claude Code `vixtab-orchestrate` và
-   `vixtab-ticket` (trong `.claude/skills` của repo, không đưa vào git), rồi tab *Orchestrator* mở ra với `/vixtab-orchestrate`
-   điền sẵn. Gõ mục tiêu rồi Enter.
+2. **Chọn phạm vi** ở thông báo cài đặt: **mọi dự án** (mặc định, phiên Claude Code nào trên máy cũng dùng được VixTab) hoặc
+   **chỉ dự án được chọn** (chỉ repo nào bạn bấm VixTab mới có). Bước này chép chương trình `vixtab` vào `~/.vixtab/bin`, thêm
+   vào PATH và cài 2 skill Claude Code `vixtab-orchestrate`, `vixtab-ticket` theo phạm vi đã chọn.
+3. **Mở repo, bấm "VixTab"** ở thanh trạng thái: tab *Orchestrator* mở ra với `/vixtab-orchestrate` điền sẵn. Gõ mục tiêu rồi
+   Enter.
 
-**VixTab bật riêng cho từng dự án:** các phiên Claude Code của dự án khác không thấy skill của VixTab. Bản trước 0.3.1 cài skill
-vào `~/.claude/skills`, nên mọi phiên của mọi dự án trên máy đều thấy; `vixtab setup` của bản mới tự gỡ các bản đó.
+Phạm vi được lưu lại, nâng cấp không làm đổi. Đổi trong *Settings ▸ VixTab: Skills Scope* hoặc bằng
+`vixtab skills scope global|project`. Ở cả hai phạm vi, skill điều phối không tự chạy chỉ vì gặp một từ chung chung như "điều phối":
+Claude sẽ hỏi bạn có muốn dùng VixTab không.
 
 Lần đầu, phiên điều phối đề nghị tạo bảng phiếu (`vixtab init --push`), và Claude Code hỏi một lần có tin cậy thư mục hay không.
 VixTab không bao giờ tự trả lời câu hỏi đó thay bạn.

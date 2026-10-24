@@ -3,7 +3,7 @@
   "publisher": "phanthaitrung",
   "displayName": "VixTab — parallel Claude Code tabs",
   "description": "Orchestrate many Claude Code sessions on one repo: one fresh, labeled tab per ticket in its own column, conflict-free merges, context-saving orchestration.",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "license": "MIT",
   "icon": "icon.png",
   "author": "phanthaitrung",
@@ -20,7 +20,7 @@
   "contributes": {
     "commands": [
       { "command": "vixtab.orchestrate", "title": "Start orchestrator", "category": "VixTab", "icon": "$(rocket)" },
-      { "command": "vixtab.setup", "title": "Set up (install the vixtab command)", "category": "VixTab" },
+      { "command": "vixtab.setup", "title": "Set up (vixtab command + Claude Code skills)", "category": "VixTab" },
       { "command": "vixtab.doctor", "title": "Run doctor", "category": "VixTab" },
       { "command": "vixtab.createPlayground", "title": "Create playground", "category": "VixTab" },
       { "command": "vixtab.evenColumns", "title": "Even column widths", "category": "VixTab" }
@@ -30,6 +30,16 @@
       "properties": {
         "vixtab.statusBar": { "type": "boolean", "default": true, "description": "Show the 'VixTab' button in the status bar." },
         "vixtab.orchestratorPrompt": { "type": "string", "default": "/vixtab-orchestrate ", "description": "Text pre-filled in the orchestrator tab (not sent)." },
+        "vixtab.skillsScope": {
+          "type": "string",
+          "enum": ["allProjects", "perProject"],
+          "enumDescriptions": [
+            "Every project: the skills live in ~/.claude/skills, so every Claude Code session on this machine can use VixTab.",
+            "Only the repositories you orchestrate: the VixTab button adds the skills to <repo>/.claude/skills (kept out of git); sessions of other projects never see them."
+          ],
+          "default": "allProjects",
+          "description": "Where VixTab's Claude Code skills apply. Changing it applies at once."
+        },
         "vixtab.closeEmptyTicketWindows": { "type": "boolean", "default": true, "description": "Close a ticket window (opened by VixTab) when its last Claude tab closes." }
       }
     }

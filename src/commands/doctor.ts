@@ -5,7 +5,7 @@ import { has, parseArgs } from "../core/args.ts";
 import { fetchMain, showMain } from "../core/board.ts";
 import { WINDOWS, windows } from "../core/bridge.ts";
 import { findClaudeBinary, folderTrusted, sessionsDir } from "../core/claude.ts";
-import { globalSkillsDir, projectSkillsDir, skillsStatus } from "../core/skills.ts";
+import { currentScope, globalSkillsDir, projectSkillsDir, skillsStatus } from "../core/skills.ts";
 import { type Config, loadConfig, mainRef } from "../core/config.ts";
 import { ancestors } from "../core/proc.ts";
 import { measure } from "../core/resources.ts";
@@ -66,16 +66,25 @@ export async function doctor(argv: string[]): Promise<void> {
     add(inside ? "OK" : "WARN", "extension", `${ws.length} window(s): ${ws.map((w) => `${w.pid} v${w.version}`).join(", ")}${inside ? `; this process runs in window ${inside}` : ""}`, inside ? undefined : "run inside a Claude Code session or terminal of VS Code, or set VIXTAB_EXT_HOST_PID");
   }
 
-  // Skills belong to the repository that uses VixTab; a user-level copy is listed to every session of every project.
-  if (c) {
-    const bad = skillsStatus(projectSkillsDir(c.repo)).filter((s) => s.state === "missing" || s.state === "outdated");
-    bad.length
-      ? add("FAIL", "skills", `${bad.map((s) => `${s.name} ${s.state}`).join(", ")} in ${native(projectSkillsDir(c.repo))}`, "vixtab skills install (or click VixTab in the status bar)")
-      : add("OK", "skills", `in ${native(projectSkillsDir(c.repo))} (this repository only)`);
+  // Skills follow the scope: every project (~/.claude/skills) or only the orchestrated repositories (<repo>/.claude/skills).
+  const scope = currentScope();
+  const notOk = (dir: string) => skillsStatus(dir).filter((s) => s.state === "missing" || s.state === "outdated");
+  if (scope === "global") {
+    const b = notOk(globalSkillsDir());
+    b.length
+      ? add("FAIL", "skills", `scope every project, but ${b.map((s) => `${s.name} ${s.state}`).join(", ")} in ${native(globalSkillsDir())}`, "vixtab setup (or vixtab skills install --global)")
+      : add("OK", "skills", `scope every project: ${native(globalSkillsDir())}`);
+  } else {
+    if (c) {
+      const b = notOk(projectSkillsDir(c.repo));
+      b.length
+        ? add("FAIL", "skills", `scope project, but ${b.map((s) => `${s.name} ${s.state}`).join(", ")} in ${native(projectSkillsDir(c.repo))}`, "vixtab skills install (or click VixTab in the status bar)")
+        : add("OK", "skills", `scope project: ${native(projectSkillsDir(c.repo))}`);
+    }
+    const global = skillsStatus(globalSkillsDir()).filter((s) => s.state !== "missing");
+    if (global.length)
+      add("WARN", "skills", `scope project, but ${global.map((s) => s.name).join(", ")} still in ${native(globalSkillsDir())}: every project sees them`, "vixtab skills remove --global");
   }
-  const global = skillsStatus(globalSkillsDir()).filter((s) => s.state !== "missing");
-  if (global.length)
-    add("WARN", "skills", `${global.map((s) => s.name).join(", ")} also in ${native(globalSkillsDir())}: every Claude Code session of every project on this machine lists them`, "vixtab skills remove --global (or vixtab setup)");
   const shim = join(BIN_DIR, `vixtab${platform.exeSuffix}`);
   existsSync(shim) || existsSync(join(BIN_DIR, "vixtab")) ? add("OK", "cli", native(shim)) : add("FAIL", "cli", `${native(shim)} missing (the skills call it)`, "vixtab setup --bin");
 

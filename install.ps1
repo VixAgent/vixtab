@@ -1,5 +1,6 @@
 # VixTab installer for Windows: downloads the latest release, checks its SHA-256, installs the CLI to %USERPROFILE%\.vixtab\bin,
-# and (if the `code` command exists) the VS Code extension. Claude Code skills are added per repository (VixTab button).
+# the Claude Code skills (for every project by default; $env:VIXTAB_SKILLS_SCOPE='project' = only chosen repositories), and (if the
+# `code` command exists) the VS Code extension.
 #   irm https://raw.githubusercontent.com/VixAgent/vixtab/main/install.ps1 | iex
 $ErrorActionPreference = 'Stop'
 $repo = 'VixAgent/vixtab'

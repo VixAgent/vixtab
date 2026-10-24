@@ -3,9 +3,30 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// A private Claude config dir: the tests must never touch the real ~/.claude/skills.
+// A private Claude config dir and prefs file: the tests must never touch the real ~/.claude/skills or ~/.vixtab/config.json.
 process.env.CLAUDE_CONFIG_DIR = mkdtempSync(join(tmpdir(), "vixtab-claude-"));
-const { globalSkillsDir, installProjectSkills, installSkills, projectSkillsDir, removeSkills, skillsStatus } = await import("../src/core/skills.ts");
+process.env.VIXTAB_PREFS = join(mkdtempSync(join(tmpdir(), "vixtab-prefs-")), "config.json");
+delete process.env.VIXTAB_SKILLS_SCOPE;
+const { applyScope, currentScope, globalSkillsDir, installProjectSkills, installSkills, projectSkillsDir, removeSkills, savedScope, skillsStatus } = await import("../src/core/skills.ts");
+
+describe("skills scope", () => {
+  test("defaults to every project; the choice is saved and applied", () => {
+    expect(savedScope()).toBeNull();
+    expect(currentScope()).toBe("global");
+    applyScope("global");
+    expect(skillsStatus(globalSkillsDir()).map((s) => s.state)).toEqual(["ok", "ok"]);
+    applyScope("project");
+    expect(savedScope()).toBe("project");
+    expect(currentScope()).toBe("project");
+    expect(skillsStatus(globalSkillsDir()).every((s) => s.state === "missing")).toBe(true);
+    process.env.VIXTAB_SKILLS_SCOPE = "global";
+    expect(currentScope()).toBe("global");
+    delete process.env.VIXTAB_SKILLS_SCOPE;
+    applyScope("global");
+    expect(JSON.parse(readFileSync(process.env.VIXTAB_PREFS!, "utf8")).skillsScope).toBe("global");
+    removeSkills(globalSkillsDir()); // leave the user-level folder empty for the tests below
+  });
+});
 
 function repo(): string {
   const d = mkdtempSync(join(tmpdir(), "vixtab-skills-"));

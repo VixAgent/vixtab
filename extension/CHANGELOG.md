@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0 — 2026-10-24
+
+- **Choose where VixTab applies: every project (default) or only the projects you choose.** The skills scope is saved in
+  `~/.vixtab/config.json` and kept by later setups and upgrades.
+  - Every project: the skills live in `~/.claude/skills`; any Claude Code session on the machine can use VixTab.
+  - Only chosen projects: the 0.3.1 behaviour — the skills go into `<repo>/.claude/skills` (kept out of git) of the
+    repositories where you click VixTab or run `vixtab init` / `vixtab skills install`.
+  - Choose it in the first-run notification, in *Settings ▸ VixTab: Skills Scope* (applies at once), with
+    `vixtab skills scope global|project`, `vixtab setup --scope …`, or `VIXTAB_SKILLS_SCOPE` for the one-line installers.
+  - `vixtab doctor` and `vixtab skills status` report the scope and check the matching copies.
+- The orchestrator skill no longer starts on its own from a general word such as "orchestrator" or "parallel": Claude asks
+  whether you mean VixTab.
+- The scripted playground demo installs no skills; the end-to-end test runs with an isolated Claude config.
+
 ## 0.3.1 — 2026-10-24
 
 - **VixTab is per project.** Up to 0.3.0, `vixtab setup` put the skills in `~/.claude/skills`, so every Claude Code session of

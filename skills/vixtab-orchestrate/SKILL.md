@@ -1,8 +1,8 @@
 ---
 name: vixtab-orchestrate
-description: Orchestrate parallel work with VixTab — split a goal into self-contained tickets, open one fresh labeled Claude Code tab per ticket in its own column, assign it with one line, wait for events in the background without spending tokens, and close each tab when its ticket is done. Use when the user asks for VixTab, or asks to orchestrate, parallelize or split work across sessions in a repository that has a vixtab.config.json or a VixTab ticket board. Do not use in repositories that have their own orchestration tooling unless the user names VixTab.
+description: Orchestrate parallel work with VixTab — split a goal into self-contained tickets, open one fresh labeled Claude Code tab per ticket in its own column, assign it with one line, wait for events in the background without spending tokens, and close each tab when its ticket is done. Use when the user names VixTab or runs /vixtab-orchestrate, or asks to orchestrate, parallelize or split work across sessions in a repository that already has a vixtab.config.json or a VixTab ticket board. Do not pick it on your own from general words such as "orchestrator", "coordinator" or "parallel", in any language — ask the user whether they mean VixTab first. Do not use in repositories that have their own orchestration tooling unless the user names VixTab.
 ---
-<!-- vixtab-managed: installed per repository by `vixtab skills install`; may be overwritten on upgrade -->
+<!-- vixtab-managed: installed by VixTab (vixtab setup / vixtab skills); may be overwritten on upgrade -->
 
 # VixTab orchestrator
 

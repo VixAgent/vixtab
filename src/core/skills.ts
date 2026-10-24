@@ -1,20 +1,61 @@
-// The Claude Code skills of VixTab are PER PROJECT: <repo>/.claude/skills/vixtab-*, kept out of git through .git/info/exclude
-// unless the team chooses to commit them. Skills in ~/.claude/skills would be listed to every Claude Code session on the machine,
-// in every project — VixTab 0.1–0.3 put them there, so a session in an unrelated project could pick them up. `vixtab setup` now
-// removes those copies (only files that carry the marker).
+// Where the Claude Code skills of VixTab live is the user's choice — the SCOPE, saved in ~/.vixtab/config.json:
+//   global  (default): ~/.claude/skills — every Claude Code session of every project on the machine can use VixTab;
+//   project          : <repo>/.claude/skills of each repository the user orchestrates, kept out of git through
+//                      .git/info/exclude unless the team commits them; sessions of other projects never see them.
+// VixTab 0.3.1 was project-only; 0.4.0 made the scope a choice. Removal only touches files that carry the marker.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import ORCHESTRATE from "../../skills/vixtab-orchestrate/SKILL.md" with { type: "text" };
 import TICKET from "../../skills/vixtab-ticket/SKILL.md" with { type: "text" };
 import { skillsDir } from "./claude.ts";
 import { git } from "./run.ts";
-import { native } from "./util.ts";
+import { HOME, fail, native } from "./util.ts";
 
 export const SKILLS: Record<string, string> = { "vixtab-orchestrate": ORCHESTRATE, "vixtab-ticket": TICKET };
 export const MARKER = "vixtab-managed";
 
 export const projectSkillsDir = (repo: string) => join(repo, ".claude", "skills");
 export const globalSkillsDir = () => skillsDir();
+
+// ── Scope ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+export type Scope = "global" | "project";
+export const DEFAULT_SCOPE: Scope = "global";
+const prefsFile = () => process.env.VIXTAB_PREFS ?? join(HOME, ".vixtab", "config.json");
+export function parseScope(s: string | undefined): Scope {
+  const v = (s ?? "").toLowerCase();
+  if (["global", "all", "allprojects", "all-projects"].includes(v)) return "global";
+  if (["project", "projects", "perproject", "per-project"].includes(v)) return "project";
+  fail(`scope must be "global" (every project) or "project" (only the repositories you orchestrate), got '${s ?? ""}'`, 2);
+}
+export function savedScope(): Scope | null {
+  try {
+    const s = JSON.parse(readFileSync(prefsFile(), "utf8")).skillsScope;
+    return s === "global" || s === "project" ? s : null;
+  } catch {
+    return null;
+  }
+}
+/** VIXTAB_SKILLS_SCOPE, else the saved choice, else every project. */
+export const currentScope = (): Scope => (process.env.VIXTAB_SKILLS_SCOPE ? parseScope(process.env.VIXTAB_SKILLS_SCOPE) : (savedScope() ?? DEFAULT_SCOPE));
+function saveScope(s: Scope): void {
+  let prefs: any = {};
+  try {
+    prefs = JSON.parse(readFileSync(prefsFile(), "utf8"));
+  } catch {}
+  mkdirSync(dirname(prefsFile()), { recursive: true });
+  writeFileSync(prefsFile(), JSON.stringify({ ...prefs, skillsScope: s }, null, 2) + "\n");
+}
+/** Save the scope and make the user-level skills match it (installed for "global", removed for "project"). */
+export function applyScope(s: Scope, force = false): string[] {
+  saveScope(s);
+  const notes = s === "global" ? installSkills(globalSkillsDir(), force) : removeSkills(globalSkillsDir());
+  notes.push(
+    s === "global"
+      ? "scope: every project — every Claude Code session on this machine can use VixTab (vixtab skills scope project to limit it)"
+      : "scope: only the repositories you orchestrate — the VixTab button and vixtab init add the skills there (vixtab skills scope global for every project)",
+  );
+  return notes;
+}
 
 export type SkillState = { name: string; file: string; state: "ok" | "missing" | "outdated" | "edited" };
 
@@ -66,7 +107,12 @@ export function excludeSkillsFromGit(repo: string): void {
   appendFileSync(ex, (cur && !cur.endsWith("\n") ? "\n" : "") + want.join("\n") + "\n");
 }
 
-/** Install the skills for one repository (the usual way), kept out of git unless `commit`. */
+/** Make sure the sessions of `repo` can use the skills, following the scope (global copies, or this repository's). */
+export function ensureSkillsFor(repo: string): string[] {
+  return currentScope() === "global" ? installSkills(globalSkillsDir()) : installProjectSkills(repo);
+}
+
+/** Install the skills for one repository, kept out of git unless `commit`. */
 export function installProjectSkills(repo: string, o: { force?: boolean; commit?: boolean } = {}): string[] {
   const notes = installSkills(projectSkillsDir(repo), o.force);
   if (!o.commit) excludeSkillsFromGit(repo);
