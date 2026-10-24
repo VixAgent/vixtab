@@ -9,10 +9,13 @@ when the ticket is done. Every ticket works in its own git worktree and lands on
 ## Get started in three clicks
 
 1. Install this extension (the Claude Code extension comes along if you do not have it).
-2. Click **Set up** in the notification, or run *VixTab: Set up*. It installs the `vixtab` command (`~/.vixtab/bin`) and two
-   Claude Code skills (`~/.claude/skills`).
-3. Open a git repository and click **VixTab** in the status bar. An *Orchestrator* tab opens with `/vixtab-orchestrate` typed
-   in. Add your goal, for example *"fix issues #12, #15 and #18 in parallel"*, and press Enter.
+2. Click **Set up** in the notification, or run *VixTab: Set up*. It installs the `vixtab` command (`~/.vixtab/bin`). Nothing
+   changes in your projects yet.
+3. Open a git repository and click **VixTab** in the status bar. That repository, and only that one, gets the two Claude Code
+   skills (in its `.claude/skills`, kept out of git), and an *Orchestrator* tab opens with `/vixtab-orchestrate` typed in. Add
+   your goal, for example *"fix issues #12, #15 and #18 in parallel"*, and press Enter.
+
+VixTab is **per project**: Claude Code sessions of your other projects never see its skills.
 
 Want to see it first? Run *VixTab: Create playground*: a sandbox with five sample tickets that cannot reach GitHub or your
 real projects.

@@ -1,7 +1,7 @@
 // VixTab VS Code extension.
 // 1. Bridge: executes tab commands that the `vixtab` CLI writes to ~/.cache/vixtab/commands/<pid>-<id>.cmd.json (pid = this
 //    window's extension host), answering in <pid>-<id>.result.json. The window registers in ~/.cache/vixtab/windows/<pid>.json.
-// 2. UI: status bar button and commands to start an orchestrator tab, set up the CLI + Claude Code skills, run the doctor,
+// 2. UI: status bar button and commands to start an orchestrator tab, set up the CLI, add the Claude Code skills to the repository being orchestrated, run the doctor,
 //    and create a playground. The CLI ships inside this extension (bin/), built for the platform of the .vsix.
 const vscode = require("vscode");
 const fs = require("node:fs");
@@ -235,10 +235,9 @@ async function pickFolder() {
   return pick ? pick.f.uri.fsPath : null;
 }
 
-function needsSetup() {
-  const skill = path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"), "skills", "vixtab-orchestrate", "SKILL.md");
-  return !(fs.existsSync(INSTALLED) || fs.existsSync(path.join(os.homedir(), ".vixtab", "bin", "vixtab"))) || !fs.existsSync(skill);
-}
+// Only the CLI is installed machine-wide. The Claude Code skills go into each repository the user orchestrates
+// (<repo>/.claude/skills, kept out of git): sessions of other projects never see them.
+const needsSetup = () => !(fs.existsSync(INSTALLED) || fs.existsSync(path.join(os.homedir(), ".vixtab", "bin", "vixtab")));
 
 async function setup(silent) {
   const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "VixTab: setting up…" }, () => runCli(["setup"]));
@@ -247,7 +246,7 @@ async function setup(silent) {
     vscode.window.showErrorMessage("VixTab setup failed — see the VixTab output.");
     return false;
   }
-  if (!silent) vscode.window.showInformationMessage("VixTab is ready: the vixtab command and the Claude Code skills are installed. Click 'VixTab' in the status bar to start orchestrating.");
+  if (!silent) vscode.window.showInformationMessage("VixTab is ready: the vixtab command is installed. Click 'VixTab' in the status bar of a repository to start orchestrating there.");
   return true;
 }
 
@@ -255,6 +254,12 @@ async function orchestrate() {
   const folder = await pickFolder();
   if (!folder) return;
   if (needsSetup() && !(await setup(true))) return;
+  const sk = await runCli(["skills", "install"], folder);
+  if (sk.code !== 0) {
+    out.show(true);
+    vscode.window.showErrorMessage(`VixTab: could not add the Claude Code skills to ${folder} (is it a git repository?) — see the VixTab output.`);
+    return;
+  }
   const taken = new Set(vscode.window.tabGroups.all.flatMap((g) => g.tabs).filter(isClaudeTab).map((t) => t.label));
   let label = "Orchestrator";
   for (let i = 2; taken.has(label); i++) label = `Orchestrator ${i}`;
@@ -335,7 +340,7 @@ function activate(context) {
   if (needsSetup() && !isTicketWindow() && !context.globalState.get(key)) {
     void context.globalState.update(key, true);
     void vscode.window
-      .showInformationMessage("VixTab: finish setup? It installs the `vixtab` command (~/.vixtab/bin) and two Claude Code skills (~/.claude/skills).", "Set up", "Not now")
+      .showInformationMessage("VixTab: finish setup? It installs the `vixtab` command (~/.vixtab/bin). Nothing changes in your projects until you click VixTab in one of them.", "Set up", "Not now")
       .then((a) => a === "Set up" && setup(false));
   }
   log(`VixTab ${context.extension.packageJSON.version} active in window ${process.pid}`);

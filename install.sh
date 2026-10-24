@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # VixTab installer for Linux: downloads the latest release, checks its SHA-256, installs the CLI to ~/.vixtab/bin,
-# the Claude Code skills, and (if the `code` command exists) the VS Code extension.
+# and (if the `code` command exists) the VS Code extension. Claude Code skills are added per repository (VixTab button).
 #   curl -fsSL https://raw.githubusercontent.com/VixAgent/vixtab/main/install.sh | bash
 #   VIXTAB_VERSION=v0.1.0 bash install.sh        # a specific release
 set -euo pipefail

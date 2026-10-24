@@ -2,7 +2,7 @@
 name: vixtab-ticket
 description: Work on one VixTab ticket end to end in its own git worktree — claim it, implement, merge through the test-gated merge queue, fill in the Answer, mark it done, and print the closing line. Use when told to work on or continue a ticket with the vixtab-ticket skill or with VixTab (for example "Work on ticket T-001 with the vixtab-ticket skill").
 ---
-<!-- vixtab-managed: this file is installed by `vixtab setup` and may be overwritten on upgrade -->
+<!-- vixtab-managed: installed per repository by `vixtab skills install`; may be overwritten on upgrade -->
 
 # Work on a VixTab ticket
 

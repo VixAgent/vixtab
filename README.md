@@ -62,10 +62,16 @@ the ticket is done. Every ticket works in its own git worktree and lands on `mai
    `code --install-extension vixtab-linux-x64.vsix` (or `vixtab-win32-x64.vsix`). The Claude Code extension is installed
    with it if you do not have it yet.
 2. **Click "Set up"** in the notification (or Command Palette ▸ *VixTab: Set up*). It copies the `vixtab` program to
-   `~/.vixtab/bin`, puts it on your PATH, and installs two Claude Code skills in `~/.claude/skills`:
-   `vixtab-orchestrate` and `vixtab-ticket`.
-3. **Open a repository and click "VixTab"** in the status bar. An *Orchestrator* tab opens with `/vixtab-orchestrate`
-   already typed in. Add your goal — for example *"fix issues #12, #15 and #18 in parallel"* — and press Enter.
+   `~/.vixtab/bin` and puts it on your PATH. Nothing changes in your projects yet.
+3. **Open a repository and click "VixTab"** in the status bar. That repository — and only that one — gets the two Claude Code
+   skills `vixtab-orchestrate` and `vixtab-ticket` in its `.claude/skills` (kept out of git), and an *Orchestrator* tab opens
+   with `/vixtab-orchestrate` already typed in. Add your goal — for example *"fix issues #12, #15 and #18 in parallel"* — and
+   press Enter.
+
+**VixTab is per project.** Claude Code sessions of your other projects do not see its skills. `vixtab skills install` adds them
+to a repository by hand (`--commit` to share them with your team), `vixtab skills remove` takes them out, `vixtab skills status`
+shows where they are. Versions before 0.3.1 put the skills in `~/.claude/skills`, where every session of every project listed
+them; `vixtab setup` removes those copies.
 
 The first time, the orchestrator offers to create the ticket board (`vixtab init --push`), and Claude Code asks once whether
 it may trust the folder. VixTab never answers that question without you.
@@ -241,9 +247,11 @@ Environment overrides: `VIXTAB_HOME`, `VIXTAB_REPO`, `VIXTAB_MAX_SESSIONS`, `VIX
   pseudo-terminal, types `/rename <label>` and `/exit`, then the extension opens that session with Claude Code's
   `claude-vscode.editor.open` command; the tab takes its label from the session title.
 - **Sessions and transcripts** are found in `~/.claude/sessions` and `~/.claude/projects`.
-- **Skills** (`~/.claude/skills/vixtab-*/SKILL.md`) hold the protocol for the orchestrator and for ticket sessions, so the
-  assignment message stays one line. Prefer plugins? `/plugin marketplace add VixAgent/vixtab` then
-  `/plugin install vixtab@vixtab` installs the same skills (the extension is still needed for tabs).
+- **Skills** (`<repo>/.claude/skills/vixtab-*/SKILL.md`, per repository) hold the protocol for the orchestrator and for ticket
+  sessions, so the assignment message stays one line. Ticket sessions start in the repository root and see them; linked
+  worktrees without their own `.claude/skills` use the main checkout's (Claude Code 2.1.277+). Prefer plugins?
+  `/plugin marketplace add VixAgent/vixtab` then `/plugin install vixtab@vixtab` installs the same skills (the extension is still
+  needed for tabs; a plugin is enabled for all projects unless you scope it).
 
 | | Linux | Windows |
 |---|---|---|

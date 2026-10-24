@@ -8,6 +8,7 @@ import { playground, HELP as PLAYGROUND } from "./commands/playground.ts";
 import { procs, HELP as PROCS } from "./commands/procs.ts";
 import { session, HELP as SESSION } from "./commands/session.ts";
 import { setup, HELP as SETUP } from "./commands/setup.ts";
+import { skills, HELP as SKILLS } from "./commands/skills.ts";
 import { tab, HELP as TAB } from "./commands/tab.ts";
 import { ticket, HELP as TICKET } from "./commands/ticket.ts";
 import { wait, HELP as WAIT } from "./commands/wait.ts";
@@ -20,7 +21,8 @@ const USAGE = `VixTab ${VERSION} — parallel Claude Code sessions, one fresh ta
 Usage: vixtab <command> …      (vixtab help <command> for details)
 
   Getting started
-    setup                 install the CLI to ~/.vixtab/bin, PATH, and the Claude Code skills
+    setup                 install the CLI to ~/.vixtab/bin and put it on PATH
+    skills install        the Claude Code skills, for THIS repository only (other projects never see them)
     doctor [--brief]      check git, the board, Claude Code, the VS Code extension, skills, resources
     init [--push]         add a ticket board (vixtab.config.json + tickets/) to this repository
     playground …          a safe sandbox and scripted demos
@@ -52,6 +54,7 @@ const COMMANDS: Record<string, [(argv: string[]) => Promise<void>, string]> = {
   lock: [lock, LOCK],
   init: [init, INIT],
   setup: [setup, SETUP],
+  skills: [skills, SKILLS],
   doctor: [doctor, "vixtab doctor [--brief] [--json]"],
   playground: [playground, PLAYGROUND],
 };

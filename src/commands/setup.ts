@@ -1,49 +1,25 @@
-// vixtab setup — install the CLI to ~/.vixtab/bin, put it on PATH, install the Claude Code skills, optionally the extension.
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+// vixtab setup — install the CLI to ~/.vixtab/bin and put it on PATH, optionally the extension. The Claude Code skills are per
+// project (vixtab skills install); setup removes the user-level copies older versions left in ~/.claude/skills.
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import ORCHESTRATE from "../../skills/vixtab-orchestrate/SKILL.md" with { type: "text" };
-import TICKET from "../../skills/vixtab-ticket/SKILL.md" with { type: "text" };
 import { has, parseArgs, str } from "../core/args.ts";
-import { skillsDir } from "../core/claude.ts";
 import { runInherit } from "../core/run.ts";
 import { isCompiled, selfArgv } from "../core/self.ts";
+import { globalSkillsDir, installSkills, removeSkills } from "../core/skills.ts";
 import { HOME, IS_WIN, fail, native, pathKey } from "../core/util.ts";
 import { platform } from "../platform/index.ts";
 
-export const SKILLS: Record<string, string> = { "vixtab-orchestrate": ORCHESTRATE, "vixtab-ticket": TICKET };
 export const BIN_DIR = join(HOME, ".vixtab", "bin");
-export const MARKER = "vixtab-managed";
 
-export const HELP = `vixtab setup [--bin] [--skills] [--path] [--extension <file.vsix>] [--force]
+export const HELP = `vixtab setup [--bin] [--path] [--extension <file.vsix>] [--global-skills]
 
-Without options: --bin --path --skills.
-  --bin        copy this program to ${native(BIN_DIR)} (the path the skills call)
-  --path       add that folder to the user PATH (Linux: ~/.local/bin/vixtab link)
-  --skills     install the Claude Code skills vixtab-orchestrate and vixtab-ticket into ~/.claude/skills (all projects)
-  --extension  install the VS Code extension from a .vsix with \`code --install-extension\`
-  --force      overwrite skills you edited (files without the "${MARKER}" marker)`;
-
-export function installSkills(force = false): string[] {
-  const notes: string[] = [];
-  for (const [name, text] of Object.entries(SKILLS)) {
-    const dir = join(skillsDir(), name), file = join(dir, "SKILL.md");
-    if (existsSync(file) && !force) {
-      const cur = readFileSync(file, "utf8");
-      if (cur === text) {
-        notes.push(`skill ${name}: up to date`);
-        continue;
-      }
-      if (!cur.includes(MARKER)) {
-        notes.push(`skill ${name}: kept your edited copy (use --force to replace)`);
-        continue;
-      }
-    }
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(file, text);
-    notes.push(`skill ${name}: installed ${native(file)}`);
-  }
-  return notes;
-}
+Without options: --bin --path, and removes the VixTab skills that versions before 0.3.1 put in ~/.claude/skills.
+  --bin            copy this program to ${native(BIN_DIR)} (the path the skills call)
+  --path           add that folder to the user PATH (Linux: ~/.local/bin/vixtab link)
+  --extension      install the VS Code extension from a .vsix with \`code --install-extension\`
+  --global-skills  put the skills in ~/.claude/skills instead: EVERY Claude Code session of EVERY project on this machine then
+                   lists them. Normally they live in each repository that uses VixTab (vixtab skills install, done for you
+                   by the VixTab button and by vixtab init).`;
 
 export function installBin(): string {
   mkdirSync(BIN_DIR, { recursive: true });
@@ -68,16 +44,19 @@ export function installBin(): string {
 export async function setup(argv: string[]): Promise<void> {
   const a = parseArgs(argv, ["extension"]);
   if (has(a, "help")) return void console.log(HELP);
-  const any = ["bin", "skills", "path", "extension"].some((k) => has(a, k));
-  const want = (k: string) => (any ? has(a, k) : k !== "extension");
+  const any = ["bin", "path", "extension", "global-skills"].some((k) => has(a, k));
+  const want = (k: string) => (any ? has(a, k) : k === "bin" || k === "path");
   if (want("bin")) console.log(installBin());
   if (want("path")) console.log(platform.addToUserPath(BIN_DIR));
-  if (want("skills")) for (const n of installSkills(has(a, "force"))) console.log(n);
+  if (has(a, "global-skills")) {
+    for (const n of installSkills(globalSkillsDir())) console.log(n);
+    console.log("Note: every Claude Code session of every project on this machine now lists these skills.");
+  } else if (!any) for (const n of removeSkills(globalSkillsDir())) console.log(`${n} (VixTab skills are per project now: vixtab skills install)`);
   const vsix = str(a, "extension");
   if (vsix) {
     if (!existsSync(vsix)) fail(`no such file: ${vsix}`, 2);
     const code = Bun.which("code") ?? fail("the `code` command is not on PATH (VS Code: Command Palette ▸ Shell Command: Install 'code' command)", 2);
     process.exitCode = await runInherit([code, "--install-extension", vsix, "--force"]);
   }
-  console.log("Next: open a repository in VS Code and click 'VixTab: Orchestrate' in the status bar (or run vixtab doctor).");
+  console.log("Next: open a repository in VS Code and click 'VixTab' in the status bar — that repository gets the skills; others are untouched.");
 }

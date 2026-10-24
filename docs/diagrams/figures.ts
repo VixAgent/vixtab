@@ -306,8 +306,8 @@ export function install(theme: Theme) {
   s.text(640, 46, "From install to orchestrating in three clicks", 30, { anchor: "middle" });
   const steps: [string, string, string, Hue][] = [
     ["1. Install VixTab", "VS Code Marketplace or .vsix", "(Claude Code comes along)", "blue"],
-    ["2. Click \"Set up\"", "vixtab CLI in ~/.vixtab/bin", "skills in ~/.claude/skills", "orange"],
-    ["3. Click \"VixTab\"", "an Orchestrator tab opens:", "type your goal, press Enter", "purple"],
+    ["2. Click \"Set up\"", "vixtab CLI in ~/.vixtab/bin", "nothing in your projects yet", "orange"],
+    ["3. Click \"VixTab\"", "this repo gets the skills;", "an Orchestrator tab opens", "purple"],
   ];
   steps.forEach(([a, b, c, hue], i) => {
     const x = 40 + i * 420;

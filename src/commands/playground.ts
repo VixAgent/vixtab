@@ -20,6 +20,7 @@ import { git, gitBash, gitOk, run } from "../core/run.ts";
 import { selfArgv, selfLine } from "../core/self.ts";
 import { HOME, IS_WIN, fail, native, norm, parseSizeMB, pathKey, sleep } from "../core/util.ts";
 import { platform } from "../platform/index.ts";
+import { installProjectSkills } from "../core/skills.ts";
 import { BIN_DIR } from "./setup.ts";
 
 export const HELP = `vixtab playground — try VixTab safely
@@ -86,6 +87,7 @@ export function createPlayground(dir: string, quiet = false): string {
   gitOk(project, "add", "-A");
   gitOk(project, "commit", "-q", "-m", "playground: a tiny recipe book with five tickets");
   gitOk(project, "push", "-q", "-u", "origin", "main");
+  installProjectSkills(project); // the playground's sessions see the skills; no other project does
   if (!quiet) {
     console.log(`Playground ready: ${native(dir)}`);
     console.log(`  project : ${native(project)}   (origin: ${native(origin)}, a local bare repo)`);

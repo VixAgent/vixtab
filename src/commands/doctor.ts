@@ -1,10 +1,11 @@
 // vixtab doctor — check everything VixTab relies on, with the fix for each problem.
-import { accessSync, constants, existsSync, readFileSync } from "node:fs";
+import { accessSync, constants, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { has, parseArgs } from "../core/args.ts";
 import { fetchMain, showMain } from "../core/board.ts";
 import { WINDOWS, windows } from "../core/bridge.ts";
-import { findClaudeBinary, folderTrusted, sessionsDir, skillsDir } from "../core/claude.ts";
+import { findClaudeBinary, folderTrusted, sessionsDir } from "../core/claude.ts";
+import { globalSkillsDir, projectSkillsDir, skillsStatus } from "../core/skills.ts";
 import { type Config, loadConfig, mainRef } from "../core/config.ts";
 import { ancestors } from "../core/proc.ts";
 import { measure } from "../core/resources.ts";
@@ -12,7 +13,7 @@ import { run } from "../core/run.ts";
 import { native } from "../core/util.ts";
 import { platform } from "../platform/index.ts";
 import { VERSION } from "../version.ts";
-import { BIN_DIR, SKILLS } from "./setup.ts";
+import { BIN_DIR } from "./setup.ts";
 
 type Check = { status: "OK" | "WARN" | "FAIL"; name: string; detail: string; fix?: string };
 
@@ -65,11 +66,16 @@ export async function doctor(argv: string[]): Promise<void> {
     add(inside ? "OK" : "WARN", "extension", `${ws.length} window(s): ${ws.map((w) => `${w.pid} v${w.version}`).join(", ")}${inside ? `; this process runs in window ${inside}` : ""}`, inside ? undefined : "run inside a Claude Code session or terminal of VS Code, or set VIXTAB_EXT_HOST_PID");
   }
 
-  const stale = Object.entries(SKILLS).filter(([n, text]) => {
-    const f = join(skillsDir(), n, "SKILL.md");
-    return !existsSync(f) || readFileSync(f, "utf8") !== text;
-  });
-  stale.length ? add("FAIL", "skills", `missing or outdated: ${stale.map(([n]) => n).join(", ")}`, "vixtab setup --skills") : add("OK", "skills", `installed in ${native(skillsDir())}`);
+  // Skills belong to the repository that uses VixTab; a user-level copy is listed to every session of every project.
+  if (c) {
+    const bad = skillsStatus(projectSkillsDir(c.repo)).filter((s) => s.state === "missing" || s.state === "outdated");
+    bad.length
+      ? add("FAIL", "skills", `${bad.map((s) => `${s.name} ${s.state}`).join(", ")} in ${native(projectSkillsDir(c.repo))}`, "vixtab skills install (or click VixTab in the status bar)")
+      : add("OK", "skills", `in ${native(projectSkillsDir(c.repo))} (this repository only)`);
+  }
+  const global = skillsStatus(globalSkillsDir()).filter((s) => s.state !== "missing");
+  if (global.length)
+    add("WARN", "skills", `${global.map((s) => s.name).join(", ")} also in ${native(globalSkillsDir())}: every Claude Code session of every project on this machine lists them`, "vixtab skills remove --global (or vixtab setup)");
   const shim = join(BIN_DIR, `vixtab${platform.exeSuffix}`);
   existsSync(shim) || existsSync(join(BIN_DIR, "vixtab")) ? add("OK", "cli", native(shim)) : add("FAIL", "cli", `${native(shim)} missing (the skills call it)`, "vixtab setup --bin");
 

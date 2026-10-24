@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.1 — 2026-10-24
+
+- **VixTab is per project.** Up to 0.3.0, `vixtab setup` put the skills in `~/.claude/skills`, so every Claude Code session of
+  every project on the machine listed them, and a session in an unrelated project could pick VixTab up on its own. Now:
+  - `vixtab setup` installs only the CLI, and removes the user-level copies older versions left (only files that carry the
+    VixTab marker; a copy you edited is kept). `--global-skills` restores the old behaviour, for those who want it.
+  - The skills go into the repository being orchestrated, `<repo>/.claude/skills/vixtab-*`, kept out of git through
+    `.git/info/exclude`: the VixTab button, `vixtab init` and `vixtab playground create` do it; `vixtab skills install
+    [--commit] | remove [--global] | status` by hand.
+  - `vixtab doctor` checks the repository's skills and warns about user-level copies.
+
 ## 0.3.0 — 2026-10-24
 
 - **Sessions wait for each other, only when they must.** A ticket's After list is now enforced: `ticket claim` refuses
