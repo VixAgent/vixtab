@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.1 — 2026-10-24
+
+- Ticket windows say which project opened them: the title is `[<project>] VixTab tickets N — …` and the workspace file
+  `<project>-tickets-N.code-workspace`.
+- Upgrading while an orchestration runs: `vixtab setup` no longer stops when an earlier, renamed copy of the program is still
+  running (Windows cannot delete it); it is left for the next upgrade.
+- `vixtab status` in a folder that is not a git repository says whether its sessions see the skills, and that a board needs git.
+- `ticket done` writes its done marker last, after the worktree is removed, so `vixtab wait` reports `done` (and the orchestrator
+  closes the tab) only when the session has nothing left to clean up; `ready` events never come before the `done` that causes
+  them (a race seen once in CI-like runs).
+
 ## 0.5.0 — 2026-10-24
 
 - **VixTab in the Activity Bar.** A VixTab icon in VS Code's left bar, like Claude Code's, opens the VixTab panel: *Start

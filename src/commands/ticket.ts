@@ -288,8 +288,13 @@ export async function ticket(argv: string[]): Promise<void> {
           git(W, "commit", "-q", "-m", `tickets: ${id} done`);
         }
       });
-      writeFileSync(join(claimDir(c, id), "done"), nowIso() + "\n");
-      await removeWorktree(c, W, id);
+      // The done marker is written LAST, once the worktree is gone (or its removal failed): `vixtab wait` reports "done" from it
+      // and the orchestrator then closes this session's tab, so nothing may still be running here at that point.
+      try {
+        await removeWorktree(c, W, id);
+      } finally {
+        writeFileSync(join(claimDir(c, id), "done"), nowIso() + "\n");
+      }
       return;
     }
 

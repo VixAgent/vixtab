@@ -61,10 +61,10 @@ export function layoutFlow(theme: Theme) {
   window_(s, 282, y, 300, 220, [O, { label: "T-001", hue: "blue", status: ["DOING", "blue"] }, { label: "T-002", hue: "orange", status: ["DOING", "orange"] }, { label: "T-003", hue: "green", status: ["DOING", "green"] }]);
   // 3. more tickets: a ticket window with stacked tabs
   window_(s, 624, y, 300, 150, [O, { label: "T-001", hue: "blue" }, { label: "T-002", hue: "orange" }, { label: "T-003", hue: "green" }]);
-  stackWindow(s, 700, y + 100, 240, 150, [["T-004", "yellow"], ["T-005", "red"], ["T-006", "blue"]], 0, "VixTab tickets 1");
+  stackWindow(s, 700, y + 100, 240, 150, [["T-004", "yellow"], ["T-005", "red"], ["T-006", "blue"]], 0, "[my-app] VixTab tickets 1");
   // 4. done: tabs close
   window_(s, 980, y, 280, 150, [O, { label: "T-002", hue: "orange" }, { label: "T-003", hue: "green", status: ["DONE", "green"], done: true }]);
-  stackWindow(s, 1036, y + 100, 224, 150, [["T-004", "yellow"], ["T-006", "blue"]], 0, "VixTab tickets 1");
+  stackWindow(s, 1036, y + 100, 224, 150, [["T-004", "yellow"], ["T-006", "blue"]], 0, "[my-app] VixTab tickets 1");
   s.arrow(246, y + 110, 276, y + 110, { width: 2.2 });
   s.arrow(588, y + 110, 618, y + 110, { width: 2.2 });
   s.arrow(946, y + 110, 976, y + 110, { width: 2.2 });

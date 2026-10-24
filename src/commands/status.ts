@@ -96,7 +96,11 @@ export async function status(argv: string[]): Promise<void> {
 
   const latest = [VERSION, cli, ext[0], usedVersion].filter((v): v is string => !!v && v !== "?").sort((x, y) => cmp(y, x))[0] ?? VERSION;
   const old = (v: string | null | undefined) => (v && v !== "?" && cmp(v, latest) < 0 ? `  ← older than ${latest}` : "");
-  console.log(repo ? `VixTab in ${native(repo)}: ${skillsHere ? "YES, its Claude Code sessions can use VixTab" : "NO, its sessions do not see the VixTab skills"}` : "Not inside a git repository.");
+  console.log(
+    repo
+      ? `VixTab in ${native(repo)}: ${skillsHere ? "YES, its Claude Code sessions can use VixTab" : "NO, its sessions do not see the VixTab skills"}`
+      : `${native(process.cwd())} is not a git repository: ${skillsHere ? "Claude Code sessions here see the VixTab skills (every project), but a ticket board needs a git repository" : "VixTab needs a git repository"}.`,
+  );
   console.log(`  CLI        ${cli ? `v${cli}` : "not installed"} (${out.cli.path})${old(cli)}${cli !== VERSION ? `; this program v${VERSION}` : ""}`);
   console.log(`  extension  ${ext.length ? `v${ext[0]} installed` : "not installed"}${ext.length > 1 ? ` (also ${ext.slice(1).map((v) => `v${v}`).join(", ")})` : ""}${old(ext[0])}`);
   for (const w of wins) console.log(`             window ${w.pid}: v${w.version}${w.pid === me ? " (this window)" : ""}  ${w.folders.map(native).join(", ")}${old(w.version) ? `${old(w.version)} — reopen that window to load the new one` : ""}`);

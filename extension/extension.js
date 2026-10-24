@@ -184,7 +184,7 @@ const scan = () => {
   } catch {}
 };
 
-// A ticket window is a VS Code window that VixTab opened from <repo>/.vixtab/windows/tickets-N.code-workspace.
+// A ticket window is a VS Code window that VixTab opened from <repo>/.vixtab/windows/<project>-tickets-N.code-workspace.
 const workspaceFile = () => (vscode.workspace.workspaceFile && vscode.workspace.workspaceFile.scheme === "file" ? vscode.workspace.workspaceFile.fsPath : null);
 const isTicketWindow = () => /[\\/]\.vixtab[\\/]windows[\\/][^\\/]+\.code-workspace$/i.test(workspaceFile() || "");
 

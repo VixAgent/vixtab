@@ -26,7 +26,14 @@ Without --bin/--path/--extension: all of --bin --path, and the skills for the sc
 export function installBin(): string {
   mkdirSync(BIN_DIR, { recursive: true });
   const target = join(BIN_DIR, `vixtab${platform.exeSuffix}`);
-  for (const f of readdirSync(BIN_DIR)) if (f.startsWith("vixtab.old-")) rmSync(join(BIN_DIR, f), { force: true });
+  // Earlier copies renamed by previous upgrades; one that still runs (a background `vixtab wait` of a running orchestration)
+  // cannot be deleted on Windows: skip it, the next upgrade removes it.
+  for (const f of readdirSync(BIN_DIR)) {
+    if (!f.startsWith("vixtab.old-")) continue;
+    try {
+      rmSync(join(BIN_DIR, f), { force: true });
+    } catch {}
+  }
   if (!isCompiled()) {
     // Development checkout: a shim that runs the sources with Bun (works in bash and Git Bash).
     const [bun, cli] = selfArgv();

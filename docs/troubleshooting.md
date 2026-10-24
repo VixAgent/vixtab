@@ -41,7 +41,7 @@ overloaded window. Do not reload a window that runs sessions: reloading restarts
 
 ## A ticket window does not open
 
-`vixtab tab new-window` runs `code -n <repo>/.vixtab/windows/tickets-N.code-workspace` and waits 60 s for the new window to
+`vixtab tab new-window` runs `code -n <repo>/.vixtab/windows/<project>-tickets-N.code-workspace` and waits 60 s for the new window to
 register. Check that the `code` command works, that VS Code is not waiting on a dialog (or a locked screen), and that the
 repository folder is trusted in VS Code (a workspace in an untrusted folder opens in Restricted Mode, without extensions).
 

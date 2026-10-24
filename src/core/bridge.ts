@@ -2,7 +2,7 @@
 // (pid = its extension host) and executes commands written to ~/.cache/vixtab/commands/<pid>-<id>.cmd.json, answering in
 // <pid>-<id>.result.json. Only the window whose pid is in the file name acts, so tabs open in the window you are working in.
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { platform } from "../platform/index.ts";
 import { alive, ancestors } from "./proc.ts";
 import { run } from "./run.ts";
@@ -81,6 +81,8 @@ export async function windowsWithLabel(label: string): Promise<number[]> {
   return out;
 }
 
+export const ticketWindowTitle = (project: string, n: number) => `[${project}] VixTab tickets ${n} — \${activeEditorShort}`;
+
 /**
  * Open a new ticket window on `repo`: VS Code window from a workspace file under <repo>/.vixtab/windows/ (kept out of git through
  * .git/info/exclude). The file must live inside the trusted repository — a workspace file elsewhere opens in Restricted Mode, where
@@ -95,10 +97,12 @@ export async function openTicketWindow(repo: string, waitMs = 60_000): Promise<n
     const cur = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
     if (!cur.split(/\r?\n/).includes("/.vixtab/")) writeFileSync(exclude, cur + (cur && !cur.endsWith("\n") ? "\n" : "") + "/.vixtab/\n");
   } catch {}
+  // The project's name leads the title, in brackets, so a ticket window says which project opened it: "[my-app] VixTab tickets 2".
+  const project = basename(repo);
   let n = 1;
-  while (existsSync(join(dir, `tickets-${n}.code-workspace`))) n++;
-  const file = join(dir, `tickets-${n}.code-workspace`);
-  writeFileSync(file, JSON.stringify({ folders: [{ path: "../.." }], settings: { "window.title": `VixTab tickets ${n} — \${activeEditorShort}` } }, null, 2) + "\n");
+  while (existsSync(join(dir, `${project}-tickets-${n}.code-workspace`)) || existsSync(join(dir, `tickets-${n}.code-workspace`))) n++;
+  const file = join(dir, `${project}-tickets-${n}.code-workspace`);
+  writeFileSync(file, JSON.stringify({ folders: [{ path: "../..", name: project }], settings: { "window.title": ticketWindowTitle(project, n) } }, null, 2) + "\n");
   const code = Bun.which("code") ?? fail("the `code` command is not on PATH (VS Code: Shell Command: Install 'code' command)", 7);
   const r = run(IS_WIN ? ["cmd.exe", "/d", "/c", code, "-n", file] : [code, "-n", file]);
   if (r.code !== 0) fail(`code -n failed: ${(r.err || r.out).trim()}`, 7);

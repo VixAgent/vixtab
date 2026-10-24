@@ -48,6 +48,8 @@ export async function wait(argv: string[]): Promise<void> {
     const st = load();
     const seen = new Set(st.seen);
     const events: string[] = [];
+    // "done" = the local marker, which `ticket done` writes LAST (after pushing ✅ DONE and removing the worktree): the session
+    // has nothing left to clean up, so the orchestrator may close its tab. ✅ DONE on the board can appear a moment earlier.
     for (const t of targets) {
       if (isDone(c, t.id)) {
         if (!seen.has(`done ${t.id}`)) events.push(`done ${t.id}`);
@@ -55,13 +57,13 @@ export async function wait(argv: string[]): Promise<void> {
       }
       if (t.pid && !alive(t.pid) && !seen.has(`gone ${t.id}:${t.pid}`)) events.push(`gone ${t.id}:${t.pid}`);
     }
-    // Fetch AFTER reading the local done markers: a marker is written only once ✅ DONE is on main, so the board fetched now
-    // already shows it and the tickets it unblocks are reported in the same round.
     fetchMain(c);
     const rows = readBoard(c).rows;
     // A dependency chain moves on: report the waiting tickets that one of OUR tickets just unblocked.
     const mine = new Set(targets.map((t) => t.id));
-    for (const r of readyRows(rows)) if (r.after.some((x) => mine.has(x)) && !seen.has(`ready ${r.id}`)) events.push(`ready ${r.id}`);
+    // Only once those tickets of ours are fully done (marker), so "ready" comes together with — never before — their "done".
+    for (const r of readyRows(rows))
+      if (r.after.some((x) => mine.has(x)) && r.after.every((x) => !mine.has(x) || isDone(c, x)) && !seen.has(`ready ${r.id}`)) events.push(`ready ${r.id}`);
     for (const t of targets) {
       const row = rows.find((r) => r.id === t.id);
       if (row?.status.startsWith("❓")) {

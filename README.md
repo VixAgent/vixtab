@@ -172,7 +172,8 @@ So VixTab spreads tabs over windows (`"tabs"` in `vixtab.config.json`):
 | `windows` | always ticket windows; the orchestrator's window keeps only the orchestrator |
 | `columns` | always new columns in the orchestrator's window (fine for a few tickets) |
 
-A ticket window is a VS Code window opened from `<repo>/.vixtab/windows/tickets-N.code-workspace` (kept out of git through
+A ticket window is a VS Code window titled `[<project>] VixTab tickets N`, opened from
+`<repo>/.vixtab/windows/<project>-tickets-N.code-workspace` (kept out of git through
 `.git/info/exclude`). The file lives inside your repository on purpose: VS Code opens a workspace file from an untrusted
 location in Restricted Mode, where Claude Code does not run. When the last Claude tab of a ticket window closes, the window closes
 too (setting `vixtab.closeEmptyTicketWindows`). `vixtab session close` finds a tab in any window;
