@@ -11,33 +11,40 @@ stays small and every turn stays cheap. `vt` below means `~/.vixtab/bin/vixtab` 
 Linux and in Git Bash on Windows). User goal / extra instructions: $ARGUMENTS
 
 ## 0. Check once
+- Already orchestrating in this session (tabs open, a waiter running) and invoked again ⇒ treat it as a status request:
+  `vt ticket list`, report, add the new goal's tickets if one is given, and keep going. Never dispatch a ticket twice.
 - `vt doctor --brief`. Report any FAIL line with its fix to the user; do not work around it.
 - "no board" ⇒ ask the user, then `vt init --push` (creates `vixtab.config.json` and the board folder on the main branch).
+- BOARD below = the `board` folder of `vixtab.config.json`, relative to the repository root (default `tickets`).
 
 ## 1. Plan tickets that can run in parallel
-- Split the goal by code area. Every ticket gets `--area "<files, functions>"`. Same function or algorithm as another ticket ⇒
-  `--after <that id>` (it waits). Only the same file ⇒ run in parallel and add "rebase carefully: <file> is shared with T-x" to
+- Split the goal by code area. Every ticket gets `--area "<files, functions>"`. Same function or algorithm as another ticket, or it
+  needs another ticket's result ⇒ `--after <that id>[,<id>…]`: VixTab then refuses to start it before those are ✅ DONE and tells you
+  the moment it can start. Only the same file ⇒ run in parallel and add "rebase carefully: <file> is shared with T-x" to
   Boundaries. Queue only for real conflicts — parallel is the default.
 - A ticket is self-contained: Request, Why, Where to look (files, functions, line hints), Expected result, How to verify (exact
   command), Boundaries. The session must not need to explore the repo. Write the body to a temp file, then
   `vt ticket new "<title>" --area "…" [--after T-x] --body-file <file>` (prints `id=`). Never edit the board table by hand.
 
 ## 2. Dispatch
-For each ready ticket (its `After` tickets are done):
+`vt ticket ready` lists the tickets that can start now (`ready:`) and the ones that wait (`waits: T-5 after T-3 (⏳ DOING …)`).
+For each ready ticket:
 1. `vt session open <ID>` ⇒ `session=… name=<NAME> pid=<PID> label=… auto_name=…`. Exit 6 = resource gate closed (RAM/CPU/swap): stop opening,
    keep the rest queued, retry after the next `done` event. Exit 3 with "trust" = ask the user whether Claude Code may trust this
    folder; if yes, re-run with `--trust`. Exit 5 = label already open. Exit 4 = tab problem: with "reload needed", stop opening
    and ask the user to reload the VS Code window (that restarts every session in it, so they choose when); otherwise retry once.
-2. SendMessage to NAME, one line: `Work on ticket <ID> with the vixtab-ticket skill (board: <board folder>).` If NAME is
+2. SendMessage to NAME, one line: `Work on ticket <ID> with the vixtab-ticket skill (board: BOARD).` If NAME is
    not reachable, try the `label=` and then the `auto_name=` value (Claude Code versions differ; ListAgents shows the right one).
 3. Keep one line per ticket in your notes: ID, NAME, PID. Where the tab opens (a column next to you, or a ticket window) is
    decided by VixTab — do not move tabs around.
 Then start ONE background waiter (run_in_background): `vt wait T-001:PID T-002:PID …`. Do not poll, sleep or Monitor; you are
 notified when it exits. Also start `vt watch ram` in the background once.
 
-## 3. React to events (the waiter prints them, then exits — restart it for the remaining tickets)
-- `done <ID>` ⇒ `vt session close <ID> <PID>` right away (frees RAM; it can take up to a minute — never run two closes in
-  parallel), then open the next queued ticket. Restart the waiter for the tickets still running EVERY time it exits.
+## 3. React to events
+The waiter prints ONE OR MORE events, one per line, then exits. Handle every line. Order: first restart the waiter (background)
+for the tickets still running, so nothing is missed while you work; then handle the events; then open what became ready.
+- `done <ID>` ⇒ `vt session close <ID> <PID>` (frees RAM; it can take up to a minute — one close at a time, never in parallel).
+- `ready <ID>` ⇒ a waiting ticket's last After ticket is done: dispatch it (step 2) and add it to the waiter.
 - `ask <ID> #n` ⇒ `vt ticket show <ID> --questions`. If you can answer: `vt ticket answer <ID> "<answer>"`, then SendMessage the
   answer (1–2 lines) to NAME. If only the user can answer, ask the user, then do the same.
 - `rebase <ID> <files>` ⇒ SendMessage to NAME: `main now changes <files>; rebase on main and re-run your tests before merging.`
@@ -57,4 +64,6 @@ notified when it exits. Also start `vt watch ram` in the background once.
   and use the vixtab-orchestrate skill.`, stop your own background tasks, and tell the user.
 
 ## 5. Finish
-All tickets done ⇒ `vt procs orphans --kill`, then tell the user one line per ticket (id, title, result).
+All tickets done ⇒ stop your background tasks (the `vt watch ram` you started never exits on its own), `vt procs orphans --kill`,
+`git pull --ff-only` in your checkout (merges went to the remote), run the project's test command once on the result, then tell
+the user one line per ticket (id, title, result) and the test result.

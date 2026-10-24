@@ -175,6 +175,14 @@ export async function demoBoard(dir: string | undefined, keep: boolean): Promise
     show(dup);
     expect("the duplicate claim is refused (exit 5)", dup.code === 5, dup.out);
 
+    step("T-005 must wait for T-003 (its After list): an early claim is refused");
+    const early5 = vt(["ticket", "claim", "T-005", "--as", "too-early"], P);
+    show(early5);
+    const ready0 = vt(["ticket", "ready"], P);
+    show(ready0);
+    expect("claiming T-005 before T-003 is done is refused (exit 8)", early5.code === 8 && /waits for T-003/.test(early5.out), early5.out);
+    expect("ticket ready shows T-005 waiting for T-003", /^waits: T-005 after T-003/m.test(ready0.out), ready0.out);
+
     step("Each session works in its own worktree (T-004 forgets the Steps section)");
     write("T-001", "recipes/pancakes.md", "# Pancakes\n\n## Ingredients\n\n- 200 g flour\n- 2 eggs\n- 300 ml milk\n\n## Steps\n\n1. Whisk everything into a smooth batter.\n2. Cook small ladles in a hot pan, 1 minute per side.\n");
     write("T-001", "recipes/INDEX.md", INDEX.replace("- [Tomato soup]", "- [Pancakes](pancakes.md)\n- [Tomato soup]"));
@@ -220,12 +228,19 @@ export async function demoBoard(dir: string | undefined, keep: boolean): Promise
 
     step("A dev server keeps running in T-002's worktree; all four sessions fill in their answer and finish");
     const server = Bun.spawn([...self, "playground", "sleep", "300"], { cwd: wt("T-002"), stdout: "ignore", stderr: "ignore" });
+    // The orchestrator waits for T-003; T-005 depends on it.
+    const depWaiter = Bun.spawn([...self, "wait", "--as", "demo-deps", "--every", "5", "T-003"], { cwd: P, stdout: "pipe", stderr: "pipe" });
+    for (let i = 0; i < 100 && !existsSync(join(home, "locks", "wait-demo-deps.json")); i++) await sleep(100);
     await sleep(500);
     for (const id of ["T-001", "T-002", "T-003", "T-004"]) answer(id, `Done in the demo. Tests: vixtab playground check (green).`);
     const dones = await Promise.all(["T-001", "T-002", "T-003", "T-004"].map((id) => vtAsync(["ticket", "done", id], P)));
     await sleep(300);
     expect("four tickets done, worktrees removed", dones.every((d) => d.code === 0) && ["T-001", "T-002", "T-003", "T-004"].every((id) => !existsSync(wt(id))), dones.map((d) => d.out).join("\n"));
     expect("the dev server left in T-002's worktree was stopped", server.exitCode !== null || server.killed || (await Promise.race([server.exited.then(() => true), sleep(3000).then(() => false)])));
+    const depOut = await Promise.race([depWaiter.exited.then(() => new Response(depWaiter.stdout).text()), sleep(30_000).then(() => "")]);
+    if (depWaiter.exitCode === null) depWaiter.kill();
+    console.log(indent(depOut.trim() || "(waiter did not wake up)"));
+    expect('the waiter reports "done T-003" and "ready T-005" together', /^done T-003$/m.test(depOut) && /^ready T-005$/m.test(depOut), depOut);
 
     step("T-005 (after T-003) needs a decision: the session asks, the orchestrator answers");
     show(vt(["ticket", "claim", "T-005", "--as", "session-5"], P));

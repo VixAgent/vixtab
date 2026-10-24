@@ -23,4 +23,6 @@ Ticket and instructions: $ARGUMENTS (or the message you received). `vt` = `~/.vi
    points. Commit it, then `cd` back to the repository root and run `vt ticket done <ID>`: it pushes the answer, marks ✅ DONE,
    stops processes in the worktree and removes it (Windows cannot delete a folder that is your shell's current directory).
 7. **Stuck or unclear?** `vt ticket ask <ID> "<question>"`, then stop and wait: the answer arrives as a message. Continue from there.
+   **Need another ticket's result first** (it is not on main yet)? Run `vt wait --as <ID> <other ID>` in the background, stop, and
+   when it reports `done <other ID>`: `git fetch -q && git rebase <remote>/<branch>` and continue. Do not copy its code over.
 8. **Last line** of your final message, exactly: `DONE — THIS SESSION CAN BE CLOSED (<ID>)`

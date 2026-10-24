@@ -14,6 +14,7 @@ echo "Downloading VixTab ($ARCH)…"
 for f in "vixtab-linux-$ARCH.tar.gz" "vixtab-linux-$ARCH.vsix" SHA256SUMS; do curl -fsSL "$BASE/$f" -o "$TMP/$f"; done
 (cd "$TMP" && grep -E " (vixtab-linux-$ARCH\.tar\.gz|vixtab-linux-$ARCH\.vsix)$" SHA256SUMS | sha256sum -c --quiet -)
 tar -xzf "$TMP/vixtab-linux-$ARCH.tar.gz" -C "$TMP" vixtab
+chmod +x "$TMP/vixtab"
 "$TMP/vixtab" setup
 if command -v code >/dev/null 2>&1; then
   "$TMP/vixtab" setup --extension "$TMP/vixtab-linux-$ARCH.vsix"

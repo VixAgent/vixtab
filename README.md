@@ -37,9 +37,10 @@ the ticket is done. Every ticket works in its own git worktree and lands on `mai
   it costs no tokens and the tab uses your default model. [Why ↓](#one-renderer-per-window)
 - **Parallel without conflicts.** Atomic locks, one git worktree and branch per ticket, and a serialized merge queue that
   rebases, writes the board status *after* the rebase, runs the tests and only then pushes. Red tests never land.
-- **Parallel by default, queue only on real conflicts.** Tickets declare the code area they change. Same function ⇒ the
-  ticket waits (`--after`). Same file only ⇒ both run, and `vixtab wait` tells the later one to rebase when the earlier one
-  merges. `vixtab ticket overlap` lists files that two active tickets change.
+- **Sessions wait for each other, only when they must.** Parallel is the default. A ticket created `--after T-003` cannot be
+  claimed before T-003 is done, and the orchestrator is woken with `ready T-005` the moment it can start; a session that asks a
+  question waits for the answer; two tickets on the same file both run, and the later one is told to rebase when the first
+  lands; tickets beyond the machine's room wait in the queue. [How ↓](#sessions-wait-for-each-other-only-when-they-must)
 - **Resource gates instead of a fixed session cap.** A new tab opens only when free RAM (minus RAM reserved for tabs opened in
   the last 90 s), swap, commit charge (Windows) and CPU have room. Heavy steps (full test suites, E2E, builds, browsers) go
   through elastic, memory-capped slots — a cgroup scope on Linux, a Job Object on Windows.
@@ -83,7 +84,7 @@ with another, and one that must ask a question. Nothing in it can reach GitHub o
 
 | Level | What you see | Needs | Tokens |
 |---|---|---|---|
-| `vixtab playground demo board` | 4 parallel claims, duplicate claim refused, overlap report, merge queue, red tests blocked, `rebase` and `ask` events, `done` stopping a leftover process, an abandoned lock taken over — 16 checks | a terminal | none |
+| `vixtab playground demo board` | 4 parallel claims, an early claim (before its After ticket) refused, duplicate claim refused, overlap report, merge queue, red tests blocked, `rebase`, `ready` and `ask` events, `done` stopping a leftover process, an abandoned lock taken over — 19 checks | a terminal | none |
 | `vixtab playground demo tabs` | three labeled Claude tabs opening in new columns to the right, evened, then closed | VS Code + VixTab | none |
 | `vixtab playground demo heavy` | five heavy runs sharing two slots; a run over its memory cap is stopped | a terminal | none |
 | Open `~/vixtab-playground/project`, click **VixTab**, type *do all tickets on the board* | the real thing: an orchestrator opens a tab per ticket, they work, merge, ask, finish, and their tabs close | Claude Code signed in | a little |
@@ -109,6 +110,23 @@ The scripted board demo takes about 10 s on Linux and 80 s on Windows, and doubl
    *Orchestrator-2* tab and stops.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/layout-flow-dark.svg"><img src="docs/images/layout-flow.svg" alt="How VixTab lays out the tabs: one orchestrator column, one new column per ticket, closed when done" width="100%"></picture>
+
+## Sessions wait for each other, only when they must
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/dependencies-dark.svg"><img src="docs/images/dependencies.svg" alt="Tickets wait only when they must: After dependencies, questions, a shared file to rebase on, and the resource gate" width="100%"></picture>
+
+Tickets run in parallel by default. A session waits only for one of these reasons, and spends no tokens while it waits:
+
+| Reason | How it is declared | What enforces it | What wakes things up |
+|---|---|---|---|
+| it needs another ticket's result | `vixtab ticket new … --after T-003[,T-004]` (the **After** column) | `claim` refuses (exit 8) until every After ticket is ✅ DONE; `vixtab ticket ready` lists what can start | the orchestrator's waiter prints `ready T-005` together with `done T-003` |
+| it has a question | `vixtab ticket ask T-002 "…"` (status ❓ ASK, question in the ticket) | the session stops | `ask T-002 #1` → the orchestrator answers (`ticket answer`), or asks you first |
+| it shares a file with another ticket | the ticket's **Area**; `vixtab ticket overlap` | merges are serialized; tests run after the rebase | `rebase T-004 recipes/INDEX.md` when the other ticket lands |
+| the machine is full | — | `session open` exits 6 while the resource gate is closed | the next `done` frees room; the ticket opens then |
+| its session died | — | the ticket keeps its lock and worktree | `gone T-002` → a fresh session continues with `--takeover` |
+
+A ticket session can also wait by itself: `vixtab wait --as T-005 T-003` in the background, then rebase and continue when it
+prints `done T-003`. Several orchestrators can wait side by side: each `--as` name keeps its own record of the events it has seen.
 
 ## One renderer per window
 
@@ -169,14 +187,15 @@ cap + 4 GB. `vixtab session count` shows the gate; `vixtab watch ram` alerts the
 | `vixtab setup` · `vixtab doctor [--brief]` | install CLI + skills · check everything, with the fix for each problem |
 | `vixtab init [--push]` | add `vixtab.config.json` and the board to a repository |
 | `vixtab ticket list` · `new "<title>" [--area …] [--after T-x] [--body-file F]` · `show <id> [--questions]` | the board |
-| `vixtab ticket claim <id> --as <session> [--takeover]` | lock + worktree + branch + ⏳ DOING |
+| `vixtab ticket ready [--json]` | tickets that can start now, and what the others wait for |
+| `vixtab ticket claim <id> --as <session> [--takeover] [--ignore-after]` | lock + worktree + branch + ⏳ DOING (refused, exit 8, while an After ticket is not done) |
 | `vixtab ticket merge <id> [-- <test command>]` | rebase, test after rebase, push |
 | `vixtab ticket done <id>` · `release <id>` | ✅ DONE + clean-up · give the ticket back |
 | `vixtab ticket ask <id> "<question>"` · `answer <id> "<answer>"` | ❓ ASK ↔ ⏳ DOING, recorded in the ticket |
 | `vixtab ticket overlap [<id>…]` | files changed by two or more active tickets |
 | `vixtab session open <label>` · `close <label> [<pid>]` · `count` · `list` | labeled Claude tabs, resource-gated |
 | `vixtab tab layout` · `even` · `join` · `open <session>` · `close <label>` · `windows` · `new-window` | low-level tab control, ticket windows |
-| `vixtab wait [--as <name>] <id>[:<pid>] …` | sleep until `done` / `ask` / `rebase` / `gone` events |
+| `vixtab wait [--as <name>] <id>[:<pid>] …` | sleep until `done` / `ready` / `ask` / `rebase` / `gone` events (any session can use it) |
 | `vixtab heavy [--mem 6G] -- <command>` | run a heavy step through elastic, capped slots |
 | `vixtab watch ram` · `vixtab procs list\|kill <dir>` · `procs orphans [--kill]` · `vixtab lock <name> -- <cmd>` | machine helpers |
 | `vixtab playground create\|demo board\|demo tabs\|demo heavy\|check\|reset\|remove` | the sandbox |
@@ -241,7 +260,7 @@ Environment overrides: `VIXTAB_HOME`, `VIXTAB_REPO`, `VIXTAB_MAX_SESSIONS`, `VIX
 
 - VixTab relies on parts of Claude Code that are **not public APIs**: the `claude-vscode.editor.open` command, the session
   registry, the transcript format and `/rename`. They were checked with Claude Code 2.1.280 (Linux, VS Code Remote SSH) and
-  2.1.308 (Windows); a Claude Code update can break them. `vixtab doctor` checks what it can.
+  2.1.308 to 2.1.310 (Windows); a Claude Code update can break them. `vixtab doctor` checks what it can.
 - Claude Code opens only sessions of the window's own folder: run the orchestrator in a window whose folder is the repository
   (ticket windows open the repository too).
 - Opening a ticket window needs the `code` command and a VS Code that can open windows (not a locked screen); if it cannot, the

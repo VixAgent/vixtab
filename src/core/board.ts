@@ -22,6 +22,15 @@ export const ticketBodyTemplate = () => TICKET_TEMPLATE;
 
 export type Row = { id: string; file: string; title: string; after: string[]; status: string; line: number };
 
+// ── Dependencies: a ticket's After list must be ✅ DONE before it can start ──────────────────────────────────────────────
+export const isDoneStatus = (s: string) => s.startsWith("✅");
+/** The After tickets of `row` that are not done yet (a ticket missing from the board blocks too). */
+export function blockersOf(rows: Row[], row: Row): { id: string; status: string }[] {
+  return row.after.map((id) => ({ id, status: rows.find((r) => r.id === id)?.status ?? "not on the board" })).filter((b) => !isDoneStatus(b.status));
+}
+/** TODO tickets whose After tickets are all done: they can start now. */
+export const readyRows = (rows: Row[]) => rows.filter((r) => r.status.startsWith("☐") && !blockersOf(rows, r).length);
+
 /** Table cells of a markdown row, honouring escaped pipes. */
 const cells = (line: string) =>
   line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split(/(?<!\\)\|/).map((s) => s.trim());

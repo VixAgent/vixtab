@@ -331,8 +331,74 @@ export function icon(theme: Theme) {
   return s.svg("VixTab");
 }
 
+/** Sessions wait for each other only when they must: After dependencies, questions, shared files, the resource gate. */
+export function dependencies(theme: Theme) {
+  const s = new Sketch(1280, 640, theme);
+  s.text(640, 44, "Sessions wait for each other — only when they must", 30, { anchor: "middle" });
+  const x0 = 150, lane = (i: number) => 160 + i * 72;
+  const bar = (i: number, a: number, b: number, hue: Hue, label?: string) => {
+    s.box(a, lane(i) - 16, b - a, 32, { hue, fill: true, r: 9, width: 1.8 });
+    if (label) s.text(a + 12, lane(i) + 6, label, 15, { hue, maxWidth: b - a - 20 });
+  };
+  const waiting = (i: number, a: number, b: number, label: string, hue: Hue = "gray") => {
+    s.box(a, lane(i) - 16, b - a, 32, { hue, dash: true, r: 9, width: 1.4 });
+    s.text(a + 12, lane(i) + 6, label, 14, { muted: true, maxWidth: b - a - 20 });
+  };
+  // orchestrator lane: asleep on `vixtab wait`, woken by events (labels alternate above / below the line)
+  const oy = 96;
+  s.text(40, oy + 6, "orchestrator", 16, { hue: "purple" });
+  s.line(x0, oy, 1230, oy, { hue: "purple", width: 1.4, dash: true });
+  for (const x of [250, 1110]) s.text(x, oy - 10, "zZ", 16, { hue: "purple", muted: true });
+  const wake = (x: number, label: string, i: number, below = false) => {
+    s.line(x, lane(i) - 18, x, oy + 8, { hue: "purple", width: 1.1, dash: true });
+    s.ellipse(x, oy, 16, 16, { hue: "purple", fill: true, width: 1.6 });
+    s.text(x, below ? oy + 26 : oy - 12, label, 14, { hue: "purple", anchor: "middle" });
+  };
+  // lanes: the pairs that interact sit next to each other
+  const lanes = ["T-001", "T-004", "T-003", "T-005", "T-002", "T-006"];
+  lanes.forEach((id, i) => s.text(40, lane(i) + 6, id, 18));
+  // wake-ups of the orchestrator (drawn first: the bars cover their guide lines)
+  wake(340, "ask T-002", 4);
+  wake(490, "rebase T-004", 1, true);
+  wake(630, "done T-003, ready T-005", 2);
+  wake(784, "done T-002: open T-006", 4, true);
+  // T-001 merges first; T-004 changes the same file ⇒ told to rebase
+  bar(0, x0, 470, "blue", "working, then merge");
+  s.check(480, lane(0) + 2, 16);
+  bar(1, x0, 900, "red", "working in parallel on the same file as T-001");
+  s.arrow(470, lane(0) + 18, 500, lane(1) - 18, { hue: "red", width: 1.6, bend: -10 });
+  s.text(510, lane(1) - 22, "rebase: T-001 changed INDEX.md", 14, { hue: "red" });
+  s.check(910, lane(1) + 2, 16);
+  // T-003 done ⇒ T-005 (After: T-003) becomes ready
+  bar(2, x0, 610, "green", "working");
+  s.check(620, lane(2) + 2, 16);
+  waiting(3, x0, 630, "waits: After T-003 (a claim is refused until then)");
+  bar(3, 640, 1010, "purple", "starts the moment T-003 is done");
+  s.arrow(612, lane(2) + 18, 646, lane(3) - 18, { hue: "green", width: 1.8, bend: 14 });
+  s.check(1020, lane(3) + 2, 16);
+  // T-002 asks a question, waits for the answer, continues
+  bar(4, x0, 330, "orange", "working");
+  waiting(4, 340, 540, "ASK: waits for the answer", "yellow");
+  bar(4, 550, 760, "orange", "continues");
+  s.check(770, lane(4) + 2, 16);
+  // T-006 queued by the resource gate until a session closes
+  waiting(5, x0, 780, "queued: resource gate closed (free RAM, CPU)");
+  bar(5, 790, 1180, "yellow", "a session closed: room again");
+  // time axis + legend
+  s.arrow(x0, 590, 1230, 590, { width: 1.6 });
+  s.text(1230, 578, "time", 15, { anchor: "end", muted: true });
+  s.box(160, 604, 34, 20, { hue: "blue", fill: true, r: 6, width: 1.4 });
+  s.text(204, 620, "a session works", 15, { muted: true });
+  s.box(360, 604, 34, 20, { hue: "gray", dash: true, r: 6, width: 1.2 });
+  s.text(404, 620, "waits, spending no tokens", 15, { muted: true });
+  s.ellipse(628, 614, 14, 14, { hue: "purple", fill: true, width: 1.4 });
+  s.text(644, 620, "vixtab wait wakes the orchestrator: done, ready, ask, rebase, gone", 15, { muted: true });
+  return s.svg("Tickets wait only when they must: After dependencies, questions, a shared file to rebase on, and the resource gate");
+}
+
 export const FIGURES: Record<string, (t: Theme) => string> = {
   hero,
+  dependencies,
   "layout-flow": layoutFlow,
   "context-saving": contextSaving,
   lifecycle,

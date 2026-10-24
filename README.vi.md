@@ -29,8 +29,15 @@ worktree git riêng và vào nhánh `main` qua hàng đợi gộp có chạy tes
   không gọi model nên không tốn token và tab dùng model mặc định.
 - **Song song không xung đột.** Khoá nguyên tử, mỗi phiếu một worktree và một nhánh, hàng đợi gộp tuần tự: rebase, ghi trạng thái
   **sau** rebase, chạy test, rồi mới đẩy. Test đỏ không bao giờ vào `main`.
-- **Mặc định chạy song song, chỉ xếp hàng khi trùng thật.** Phiếu ghi rõ vùng mã. Trùng hàm thì chờ (`--after`); chỉ trùng tệp thì
-  vẫn chạy song song, và `vixtab wait` báo phiếu đến sau rebase khi phiếu trước đã gộp.
+- **Các phiên chờ nhau theo ràng buộc, chỉ khi thật cần.** Mặc định các phiếu chạy song song, và phiên đang chờ không tốn token.
+  Phiếu tạo với `--after T-003` không nhận được trước khi T-003 xong (`claim` từ chối, mã 8). `vixtab ticket ready` liệt kê các
+  phiếu chạy được ngay. T-003 vừa xong thì phiên điều phối được đánh thức với sự kiện `ready T-005` và mở phiếu đó. Phiên có câu hỏi
+  thì chờ câu trả lời. Hai phiếu sửa chung một tệp vẫn chạy song song: khi phiếu đầu đã gộp, phiếu sau được báo rebase rồi chạy
+  lại test. Máy hết chỗ thì phiếu xếp hàng, mở khi có phiên đóng. Một phiên phiếu cũng có thể tự chờ phiếu khác
+  (`vixtab wait --as T-005 T-003`).
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/dependencies-dark.svg"><img src="docs/images/dependencies.svg" alt="Các phiên chờ nhau theo ràng buộc: phiếu phụ thuộc, câu hỏi, tệp dùng chung, cổng tài nguyên" width="100%"></picture>
+
 - **Cổng tài nguyên thay cho trần số phiên.** Chỉ mở tab mới khi RAM trống (đã trừ phần dành cho các tab vừa mở trong 90 giây),
   swap, bộ nhớ cam kết (Windows) và CPU đều còn chỗ. Lượt nặng (trọn bộ test, E2E, dựng, trình duyệt) đi qua các ô co giãn có
   trần bộ nhớ: cgroup trên Linux, Job Object trên Windows.

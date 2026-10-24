@@ -1,7 +1,7 @@
 // Claude Code on this machine: config dir, the session registry, transcripts, the CLI binary that ships with the VS Code
 // extension, and creating a labeled session without a model turn.
 //
-// These are NOT public APIs of Claude Code. They were checked with Claude Code 2.1.280 (Linux, VS Code Remote SSH) and 2.1.308
+// These are NOT public APIs of Claude Code. They were checked with Claude Code 2.1.280 (Linux, VS Code Remote SSH) and 2.1.308–2.1.310
 // (Windows). `vixtab doctor` re-checks each of them.
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -140,18 +140,19 @@ export async function createLabeledSession(label: string, cwd: string, trust: bo
       if (/bypasspermissions|forshortcuts/i.test(s)) ready = true;
       else if (/trustthisfolder|Yes,Itrust|Doyoutrustthefiles/i.test(s) && !trustAnswered) {
         if (!trust) throw new TrustNeeded(cwd);
-        // The options are "❯ No, exit" then "Yes, I trust this folder" (numbered "1. Yes …" in some versions). Read which line
-        // carries the pointer and move DOWN until it is the "Yes" line; Enter on "No, exit" would quit the CLI.
-        let onYes = false;
-        for (let k = 0; k < 6 && !onYes; k++) {
-          const f = flat(screen);
-          onYes = /^❯(\d\.)?Yes/i.test(f.slice(f.lastIndexOf("❯")));
-          if (!onYes) {
-            type("\x1b[B");
-            await sleep(500);
-          }
+        // Read the option order and the pointer from the FIRST full drawing of the prompt ("❯ No, exit / Yes, I trust this
+        // folder" in 2.1.280–2.1.310, "❯ 1. Yes … / 2. No, exit" in others). Later redraws cannot be read as text: ConPTY only
+        // repaints the cells that changed, with cursor moves, so the new "❯" lands at the end of the stream, not on its line.
+        // Then press the arrow key the right number of times. Enter on "No, exit" quits the CLI — that is caught below.
+        await sleep(300);
+        const f = flat(screen);
+        const opts = [...f.matchAll(/(❯)?(?:\d\.)?(Yes,Itrust|Yes,proceed|No,exit)/gi)].map((m) => ({ yes: /^Yes/i.test(m[2]), ptr: !!m[1] }));
+        const yes = opts.findIndex((o) => o.yes), at = opts.findIndex((o) => o.ptr);
+        if (yes < 0 || at < 0) abort(3, "could not read the options of the trust prompt");
+        for (let k = 0; k < Math.abs(yes - at); k++) {
+          type(yes > at ? "\x1b[B" : "\x1b[A");
+          await sleep(400);
         }
-        if (!onYes) abort(3, "could not select \"Yes, I trust this folder\" in the trust prompt");
         type("\r");
         trustAnswered = true;
         screen = "";

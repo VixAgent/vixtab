@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.3.0 — 2026-10-24
+
+- **Sessions wait for each other, only when they must.** A ticket's After list is now enforced: `ticket claim` refuses
+  (exit 8) while an After ticket is not ✅ DONE (`--ignore-after` overrides); `vixtab ticket ready` lists what can start and what
+  the others wait for; `vixtab wait` reports `ready <id>` the moment a ticket's last dependency is done. A ticket session can wait
+  for another ticket by itself (`vixtab wait --as T-005 T-003`). The playground demo checks all of it (19 checks).
+- Orchestrator skill, from a real run on Windows: restart the waiter before handling events; handle several events per wake-up;
+  dispatch on `ready`; a second `/vixtab-orchestrate` during a run is a status request, never a second dispatch; at the end stop
+  `watch ram`, pull and run the tests on the result. The board folder is named explicitly.
+- Extension page and README: a tour of every feature, with a new hand-drawn figure of the ways sessions wait for each other.
+- Windows: answering Claude Code's folder-trust prompt with `--trust` works. ConPTY repaints only the cells that change, so the
+  pointer position cannot be read back from later redraws; VixTab now reads the option order from the first drawing and presses
+  the arrow key the right number of times.
+- Release builds run on Windows as well as Linux: Bun runtimes for cross-compiling are downloaded from npm and checked against
+  the registry's sha512 (`bun build --compile` could not extract Linux runtimes on Windows); `.tar.gz` archives are written by
+  the build script with proper modes (the Linux program keeps its executable bit when built on Windows); no `zip` needed.
+- x64 builds use Bun's baseline runtime (CPUs without AVX2 too). `install.sh` marks the program executable.
+
 ## 0.2.0 — 2026-10-24
 
 - **Ticket windows.** All Claude tabs of one VS Code window share one renderer thread (14 visible columns: 102 % of a core,

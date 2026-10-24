@@ -1,11 +1,11 @@
-// vixtab ticket list | new | show | claim | merge | done | release | ask | answer | overlap
+// vixtab ticket list | new | show | ready | claim | merge | done | release | ask | answer | overlap
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { type Args, has, parseArgs, str } from "../core/args.ts";
 import {
-  ANSWER_PLACEHOLDER, STATUS, addQuestion, addRow, boardFilesOnMain, countQuestions, fetchMain, parseRows, questionsOf, readBoard,
-  renderTicket, setRowStatus, setTicketStatus, ticketFileIn, ticketOnMain, writeStatusIn,
+  ANSWER_PLACEHOLDER, STATUS, addQuestion, addRow, blockersOf, boardFilesOnMain, countQuestions, fetchMain, parseRows, questionsOf, readBoard,
+  readyRows, renderTicket, setRowStatus, setTicketStatus, ticketFileIn, ticketOnMain, writeStatusIn,
 } from "../core/board.ts";
 import { type Config, branchOf, formatId, idNumber, idPattern, isId, loadConfig, mainRef, requireId, worktreeOf } from "../core/config.ts";
 import { commitOnMain, pushFromWorktree } from "../core/mainline.ts";
@@ -20,8 +20,11 @@ export const HELP = `vixtab ticket — the board of tickets that parallel sessio
   ticket new "<title>" [--body-file F] [--area "files/functions"] [--after T-001,T-002]
                                                add a ticket (next free id) straight to main; prints id= and file=
   ticket show <id> [--questions]               print a ticket as it is on main
-  ticket claim <id> [--as <session>] [--takeover]
-                                               lock + worktree + branch vixtab/<id> + ⏳ DOING on main
+  ticket ready [--json]                        tickets that can start now (TODO, every After ticket ✅ DONE) and the ones
+                                               that wait, with what they wait for
+  ticket claim <id> [--as <session>] [--takeover] [--ignore-after]
+                                               lock + worktree + branch vixtab/<id> + ⏳ DOING on main; refused (exit 8)
+                                               while a ticket in its After list is not ✅ DONE
   ticket merge <id> [-- <test command…>]       rebase on main, test after rebase, push (red tests are never pushed)
   ticket done <id>                             ✅ DONE on main, stop processes in the worktree, remove it
   ticket release <id> [--reason "…"]           give the ticket back (keeps a worktree that has unmerged work)
@@ -195,6 +198,17 @@ export async function ticket(argv: string[]): Promise<void> {
       return;
     }
 
+    case "ready": {
+      fetchMain(c);
+      const { rows } = readBoard(c);
+      const ready = readyRows(rows).map((r) => r.id);
+      const waiting = rows.filter((r) => r.status.startsWith("☐") && !ready.includes(r.id)).map((r) => ({ id: r.id, waitsFor: blockersOf(rows, r) }));
+      if (has(a, "json")) return void console.log(JSON.stringify({ ready, waiting }, null, 1));
+      console.log(`ready: ${ready.join(" ") || "(none)"}`);
+      for (const w of waiting) console.log(`waits: ${w.id} after ${w.waitsFor.map((b) => `${b.id} (${b.status})`).join(", ")}`);
+      return;
+    }
+
     case "claim": {
       const id = requireId(c, a._[0]);
       const who = str(a, "as") ?? id;
@@ -214,6 +228,12 @@ export async function ticket(argv: string[]): Promise<void> {
       try {
         fetchMain(c);
         if (!ticketOnMain(c, id)) fail(`${id} does not exist on ${mainRef(c)} (create it with vixtab ticket new)`, 2);
+        if (!takeover && !has(a, "ignore-after")) {
+          const rows = readBoard(c).rows, row = rows.find((r) => r.id === id);
+          const blockers = row ? blockersOf(rows, row) : [];
+          if (blockers.length)
+            fail(`${id} waits for ${blockers.map((b) => `${b.id} (${b.status})`).join(", ")}: every ticket in its After list must be ✅ DONE first. vixtab ticket ready lists what can start now (--ignore-after overrides).`, 8);
+        }
         await commitOnMain(c, `tickets: ${id} claimed by ${who}`, statusEdit(c, id, STATUS.doing(who), `${STATUS.doing(who)} — session **${who}**, worktree \`wt-${id}\`, branch \`${branchOf(id)}\` (${today()})`));
       } catch (e) {
         if (!takeover) rmSync(dir, { recursive: true, force: true });
