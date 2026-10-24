@@ -17,6 +17,11 @@ when the ticket is done. Every ticket works in its own git worktree and lands on
 
 Change the choice any time in *Settings ▸ VixTab: Skills Scope*; it is kept across upgrades.
 
+**The VixTab panel.** Click the VixTab icon in the Activity Bar (the left bar, next to Claude Code's): start an orchestrator,
+see whether this project can use VixTab and which version, set it up in one click, browse the board's tickets with their
+status (click one to read it), open the playground, the doctor and the settings. *VixTab: Show status* (or `vixtab status`)
+lists every version: the CLI, the extension in each open window, the skills.
+
 Want to see it first? Run *VixTab: Create playground*: a sandbox with five sample tickets that cannot reach GitHub or your
 real projects.
 

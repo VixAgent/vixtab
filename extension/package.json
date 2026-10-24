@@ -3,7 +3,7 @@
   "publisher": "phanthaitrung",
   "displayName": "VixTab — parallel Claude Code tabs",
   "description": "Orchestrate many Claude Code sessions on one repo: one fresh, labeled tab per ticket in its own column, conflict-free merges, context-saving orchestration.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "license": "MIT",
   "icon": "icon.png",
   "author": "phanthaitrung",
@@ -22,9 +22,31 @@
       { "command": "vixtab.orchestrate", "title": "Start orchestrator", "category": "VixTab", "icon": "$(rocket)" },
       { "command": "vixtab.setup", "title": "Set up (vixtab command + Claude Code skills)", "category": "VixTab" },
       { "command": "vixtab.doctor", "title": "Run doctor", "category": "VixTab" },
+      { "command": "vixtab.status", "title": "Show status (is this project set up? versions)", "category": "VixTab" },
       { "command": "vixtab.createPlayground", "title": "Create playground", "category": "VixTab" },
-      { "command": "vixtab.evenColumns", "title": "Even column widths", "category": "VixTab" }
+      { "command": "vixtab.evenColumns", "title": "Even column widths", "category": "VixTab" },
+      { "command": "vixtab.refresh", "title": "Refresh", "category": "VixTab", "icon": "$(refresh)" },
+      { "command": "vixtab.enableHere", "title": "Set up VixTab for this project", "category": "VixTab" },
+      { "command": "vixtab.showTicket", "title": "Show ticket", "category": "VixTab" },
+      { "command": "vixtab.openSettings", "title": "Settings", "category": "VixTab", "icon": "$(gear)" }
     ],
+    "viewsContainers": {
+      "activitybar": [{ "id": "vixtab", "title": "VixTab", "icon": "media/vixtab-activity.svg" }]
+    },
+    "views": {
+      "vixtab": [{ "id": "vixtab.panel", "name": "VixTab", "icon": "media/vixtab-activity.svg", "contextualTitle": "VixTab" }]
+    },
+    "menus": {
+      "view/title": [
+        { "command": "vixtab.orchestrate", "when": "view == vixtab.panel", "group": "navigation@1" },
+        { "command": "vixtab.refresh", "when": "view == vixtab.panel", "group": "navigation@2" },
+        { "command": "vixtab.openSettings", "when": "view == vixtab.panel", "group": "navigation@3" }
+      ],
+      "commandPalette": [
+        { "command": "vixtab.showTicket", "when": "false" },
+        { "command": "vixtab.refresh", "when": "false" }
+      ]
+    },
     "configuration": {
       "title": "VixTab",
       "properties": {

@@ -10,6 +10,7 @@ import TICKET from "../../skills/vixtab-ticket/SKILL.md" with { type: "text" };
 import { skillsDir } from "./claude.ts";
 import { git } from "./run.ts";
 import { HOME, fail, native } from "./util.ts";
+import { VERSION } from "../version.ts";
 
 export const SKILLS: Record<string, string> = { "vixtab-orchestrate": ORCHESTRATE, "vixtab-ticket": TICKET };
 export const MARKER = "vixtab-managed";
@@ -57,14 +58,19 @@ export function applyScope(s: Scope, force = false): string[] {
   return notes;
 }
 
-export type SkillState = { name: string; file: string; state: "ok" | "missing" | "outdated" | "edited" };
+/** `version`: the VixTab version stamped in the copy's marker line (null: unstamped, i.e. written before 0.4.1, or edited). */
+export type SkillState = { name: string; file: string; state: "ok" | "missing" | "outdated" | "edited"; version: string | null };
+
+/** The skill as written to disk: the marker line carries the version, so a copy tells which VixTab installed it. */
+export const stamped = (name: string) => SKILLS[name].replace(`<!-- ${MARKER}:`, `<!-- ${MARKER} v${VERSION}:`);
+export const versionOf = (text: string) => new RegExp(`${MARKER} v(\\d+\\.\\d+\\.\\d+)`).exec(text)?.[1] ?? null;
 
 export function skillsStatus(dir: string): SkillState[] {
-  return Object.entries(SKILLS).map(([name, text]) => {
+  return Object.keys(SKILLS).map((name) => {
     const file = join(dir, name, "SKILL.md");
-    if (!existsSync(file)) return { name, file, state: "missing" };
+    if (!existsSync(file)) return { name, file, state: "missing", version: null };
     const cur = readFileSync(file, "utf8");
-    return { name, file, state: cur === text ? "ok" : cur.includes(MARKER) ? "outdated" : "edited" };
+    return { name, file, state: cur === stamped(name) ? "ok" : cur.includes(MARKER) ? "outdated" : "edited", version: versionOf(cur) };
   });
 }
 
@@ -74,7 +80,7 @@ export function installSkills(dir: string, force = false): string[] {
     if (s.state === "ok") return `skill ${s.name}: up to date (${native(s.file)})`;
     if (s.state === "edited" && !force) return `skill ${s.name}: kept your edited copy (--force replaces it)`;
     mkdirSync(join(dir, s.name), { recursive: true });
-    writeFileSync(s.file, SKILLS[s.name]);
+    writeFileSync(s.file, stamped(s.name));
     return `skill ${s.name}: installed ${native(s.file)}`;
   });
 }

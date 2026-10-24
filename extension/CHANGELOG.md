@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0 — 2026-10-24
+
+- **VixTab in the Activity Bar.** A VixTab icon in VS Code's left bar, like Claude Code's, opens the VixTab panel: *Start
+  orchestrator*, whether this project can use VixTab (and the skills version) or a one-click set-up, the board's tickets with
+  their status (click one to read it; refreshed every minute while the panel is open), versions, playground, doctor, settings.
+- **`vixtab status`**: is VixTab set up for this project, and which versions — the CLI (this program and `~/.vixtab/bin`), the
+  VS Code extension (installed, and what each open window runs; a window keeps its version until reopened), the skills (scope,
+  copies, version) and the board. `--json` for scripts. In VS Code: *VixTab: Show status*, and the VixTab button's tooltip.
+- Every installed skill file carries the version that wrote it (`<!-- vixtab-managed v0.4.1: … -->`).
+
 ## 0.4.0 — 2026-10-24
 
 - **Choose where VixTab applies: every project (default) or only the projects you choose.** The skills scope is saved in

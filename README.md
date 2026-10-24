@@ -74,7 +74,26 @@ the ticket is done. Every ticket works in its own git worktree and lands on `mai
 | **every project** (default) | `~/.claude/skills` | any Claude Code session on this machine: click VixTab in any repository, or ask Claude to use VixTab |
 | **only chosen projects** | `<repo>/.claude/skills`, kept out of git (`--commit` to share with your team) | the repositories where you clicked VixTab or ran `vixtab init` / `vixtab skills install`; other projects never see it |
 
-Change it in *Settings ▸ VixTab: Skills Scope*, or with `vixtab skills scope global|project` (`vixtab setup --scope …`,
+**The VixTab panel.** The VixTab icon in VS Code's Activity Bar (the left bar, next to Claude Code's) opens a panel with *Start
+orchestrator*, whether this project can use VixTab (one-click set-up if not), the board's tickets with their status (click one
+to read it), versions, the playground, the doctor and the settings.
+
+**Is VixTab set up in a project, and which version?** Look at the panel, or run `vixtab status` inside the project (also
+*VixTab: Show status*):
+
+```
+VixTab in /home/me/my-app: YES, its Claude Code sessions can use VixTab
+  CLI        v0.5.0 (~/.vixtab/bin/vixtab)
+  extension  v0.5.0 installed
+             window 4242: v0.4.1 (this window)  /home/me/my-app  ← older than 0.5.0 — reopen that window to load the new one
+  skills     scope every project; this project uses the copies for every project v0.5.0
+  board      tickets/README.md on origin/main: 7 ticket(s), 2 not done
+```
+
+Every installed skill file carries the version that wrote it (`<!-- vixtab-managed v0.5.0: … -->`); a VS Code window keeps the
+extension version it started with until it is reopened. `vixtab status --json` gives the same for scripts.
+
+Change the scope in *Settings ▸ VixTab: Skills Scope*, or with `vixtab skills scope global|project` (`vixtab setup --scope …`,
 `VIXTAB_SKILLS_SCOPE` for the one-line installers). `vixtab skills status` shows where the skills are. Either way the
 orchestrator skill does not start on its own from a general word like "orchestrator": Claude asks whether you mean VixTab.
 

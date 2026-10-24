@@ -9,6 +9,7 @@ import { procs, HELP as PROCS } from "./commands/procs.ts";
 import { session, HELP as SESSION } from "./commands/session.ts";
 import { setup, HELP as SETUP } from "./commands/setup.ts";
 import { skills, HELP as SKILLS } from "./commands/skills.ts";
+import { status, HELP as STATUS } from "./commands/status.ts";
 import { tab, HELP as TAB } from "./commands/tab.ts";
 import { ticket, HELP as TICKET } from "./commands/ticket.ts";
 import { wait, HELP as WAIT } from "./commands/wait.ts";
@@ -21,14 +22,15 @@ const USAGE = `VixTab ${VERSION} — parallel Claude Code sessions, one fresh ta
 Usage: vixtab <command> …      (vixtab help <command> for details)
 
   Getting started
-    setup                 install the CLI to ~/.vixtab/bin and put it on PATH
-    skills install        the Claude Code skills, for THIS repository only (other projects never see them)
+    setup                 install the CLI to ~/.vixtab/bin, PATH, and the skills (every project, or chosen ones)
+    skills scope|install|status   where the Claude Code skills apply: every project (default) or chosen ones
+    status                is VixTab set up for this project? which versions (CLI, extension, skills), board
     doctor [--brief]      check git, the board, Claude Code, the VS Code extension, skills, resources
     init [--push]         add a ticket board (vixtab.config.json + tickets/) to this repository
     playground …          a safe sandbox and scripted demos
 
   Tickets (any session)
-    ticket list|new|show|claim|merge|done|release|ask|answer|overlap
+    ticket list|new|show|ready|claim|merge|done|release|ask|answer|overlap
 
   Tabs and sessions (orchestrator)
     session open|close|count|list     fresh labeled Claude Code tabs, resource-gated
@@ -55,6 +57,7 @@ const COMMANDS: Record<string, [(argv: string[]) => Promise<void>, string]> = {
   init: [init, INIT],
   setup: [setup, SETUP],
   skills: [skills, SKILLS],
+  status: [status, STATUS],
   doctor: [doctor, "vixtab doctor [--brief] [--json]"],
   playground: [playground, PLAYGROUND],
 };

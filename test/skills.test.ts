@@ -34,6 +34,19 @@ function repo(): string {
   return d;
 }
 
+describe("skill copies tell their version", () => {
+  test("an installed copy carries the VixTab version in its marker line", async () => {
+    const { VERSION } = await import("../src/version.ts");
+    const r = repo();
+    installProjectSkills(r);
+    const st = skillsStatus(projectSkillsDir(r));
+    expect(st.map((s) => s.version)).toEqual([VERSION, VERSION]);
+    expect(readFileSync(st[0].file, "utf8")).toContain(`<!-- vixtab-managed v${VERSION}:`);
+    writeFileSync(st[1].file, readFileSync(st[1].file, "utf8").replace(`v${VERSION}`, "v0.0.1"));
+    expect(skillsStatus(projectSkillsDir(r))[1]).toMatchObject({ state: "outdated", version: "0.0.1" });
+  });
+});
+
 describe("skills are per project", () => {
   test("install puts both skills in <repo>/.claude/skills and keeps them out of git", () => {
     const r = repo();

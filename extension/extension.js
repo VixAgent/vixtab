@@ -211,15 +211,16 @@ function cliPath() {
   return fs.existsSync(INSTALLED) ? INSTALLED : "vixtab";
 }
 
-function runCli(args, cwd) {
+// quiet: background reads for the side panel — nothing in the output channel unless they fail.
+function runCli(args, cwd, quiet = false) {
   return new Promise((resolve) => {
     const env = { ...process.env, VIXTAB_EXT_HOST_PID: String(process.pid) };
-    log(`$ vixtab ${args.join(" ")}`);
+    if (!quiet) log(`$ vixtab ${args.join(" ")}`);
     execFile(cliPath(), args, { cwd: cwd || os.homedir(), env, maxBuffer: 16 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
       const code = err ? (typeof err.code === "number" ? err.code : 1) : 0;
       const text = `${stdout || ""}${stderr || ""}`.trim();
-      if (text) out.appendLine(text);
-      resolve({ code, text });
+      if (text && !quiet) out.appendLine(text);
+      resolve({ code, text, stdout: stdout || "" });
     });
   });
 }
@@ -311,6 +312,40 @@ async function doctor() {
   await runCli(["doctor"], folder ? folder.uri.fsPath : undefined);
 }
 
+async function showStatus() {
+  const folder = (vscode.workspace.workspaceFolders || [])[0];
+  out.show(true);
+  await runCli(["status"], folder ? folder.uri.fsPath : undefined);
+}
+
+// Quick, local answer for the status-bar tooltip: is VixTab usable in this folder, and which versions.
+function skillVersion(file) {
+  try {
+    const m = /vixtab-managed v(\d+\.\d+\.\d+)/.exec(fs.readFileSync(file, "utf8"));
+    return m ? m[1] : "older than 0.4.1";
+  } catch {
+    return null;
+  }
+}
+function tooltip(version) {
+  const folder = (vscode.workspace.workspaceFolders || [])[0];
+  const claude = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  const proj = folder ? skillVersion(path.join(folder.uri.fsPath, ".claude", "skills", "vixtab-orchestrate", "SKILL.md")) : null;
+  const glob = skillVersion(path.join(claude, "skills", "vixtab-orchestrate", "SKILL.md"));
+  const where = proj ? `this project's skills v${proj}` : glob ? `skills for every project v${glob}` : null;
+  const md = new vscode.MarkdownString(
+    [
+      `**VixTab ${version}** (extension in this window)`,
+      "",
+      where ? `✔ This project can use VixTab — ${where}.` : "✘ This project's Claude Code sessions do not see VixTab yet — click to set it up here.",
+      `Skills scope: ${scope() === "global" ? "every project" : "only chosen projects"} · CLI: ${needsSetup() ? "not installed" : "~/.vixtab/bin"}`,
+      "",
+      "Click: start an orchestrator tab · *VixTab: Show status* for every version",
+    ].join("\n\n"),
+  );
+  return md;
+}
+
 async function createPlayground() {
   const dir = await vscode.window.showInputBox({ prompt: "Create the VixTab playground in", value: path.join(os.homedir(), "vixtab-playground") });
   if (!dir) return;
@@ -323,6 +358,108 @@ async function createPlayground() {
   const openIt = "Open in new window";
   if ((await vscode.window.showInformationMessage(`Playground created in ${dir}.`, openIt)) === openIt)
     await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(path.join(dir, "project")), { forceNewWindow: true });
+}
+
+// ── Side panel (Activity Bar) ──────────────────────────────────────────────────────────────────────────────────────────────
+// VixTab icon in the left Activity Bar, like Claude Code's: start an orchestrator, see whether this project can use VixTab and
+// with which versions, browse the board's tickets (click one to read it), open the playground, doctor and settings.
+const node = (label, o = {}) => {
+  const t = new vscode.TreeItem(label, o.children ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
+  if (o.icon) t.iconPath = new vscode.ThemeIcon(o.icon, o.color ? new vscode.ThemeColor(o.color) : undefined);
+  if (o.description) t.description = o.description;
+  if (o.tooltip) t.tooltip = o.tooltip;
+  if (o.command) t.command = { command: o.command, title: label, arguments: o.args || [] };
+  t.children = o.children;
+  return t;
+};
+const TICKET_ICON = [
+  [/^✅/, "pass", "testing.iconPassed"],
+  [/^⏳/, "sync", "charts.blue"],
+  [/^❓/, "question", "charts.yellow"],
+  [/^☐/, "circle-large-outline", undefined],
+];
+
+class Panel {
+  constructor() {
+    this.changed = new vscode.EventEmitter();
+    this.onDidChangeTreeData = this.changed.event;
+    this.board = null; // { at, folder, ok, tickets, error }
+  }
+  refresh(full) {
+    if (full) this.board = null;
+    this.changed.fire();
+  }
+  getTreeItem(e) {
+    return e;
+  }
+  async loadBoard(folder) {
+    if (this.board && this.board.folder === folder && Date.now() - this.board.at < 60000) return this.board;
+    const r = await runCli(["ticket", "list", "--json"], folder, true);
+    let tickets = null;
+    try {
+      tickets = JSON.parse(r.stdout);
+    } catch {}
+    this.board = { at: Date.now(), folder, ok: r.code === 0 && Array.isArray(tickets), tickets: tickets || [], error: r.text.split("\n")[0] };
+    return this.board;
+  }
+  async getChildren(e) {
+    if (e) return e.children || [];
+    const folder = ((vscode.workspace.workspaceFolders || [])[0] || {}).uri;
+    const dir = folder ? folder.fsPath : null;
+    const version = ctx.extension.packageJSON.version;
+    const claude = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+    const proj = dir ? skillVersion(path.join(dir, ".claude", "skills", "vixtab-orchestrate", "SKILL.md")) : null;
+    const glob = skillVersion(path.join(claude, "skills", "vixtab-orchestrate", "SKILL.md"));
+    const ready = !needsSetup() && (proj || glob);
+    const rows = [node("Start orchestrator", { icon: "rocket", command: "vixtab.orchestrate", tooltip: "Open an Orchestrator tab for this folder" })];
+    if (!dir) rows.push(node("Open a folder (a git repository) to use VixTab", { icon: "folder-opened", command: "vscode.openFolder" }));
+    else if (ready)
+      rows.push(node("This project can use VixTab", { icon: "pass-filled", color: "testing.iconPassed", description: proj ? `own skills v${proj}` : `skills for every project v${glob}`, command: "vixtab.status", tooltip: "Show every version (vixtab status)" }));
+    else
+      rows.push(node("Not set up for this project", { icon: "warning", color: "charts.yellow", description: "click to set it up", command: "vixtab.enableHere", tooltip: needsSetup() ? "Installs the vixtab command and the Claude Code skills" : "Adds the Claude Code skills for this project" }));
+    if (dir && !needsSetup()) {
+      const b = await this.loadBoard(dir);
+      if (b.ok && b.tickets.length) {
+        const open = b.tickets.filter((t) => !/^✅/.test(t.status)).length;
+        rows.push(
+          node("Board", {
+            icon: "checklist",
+            description: `${b.tickets.length} ticket(s) · ${open} not done`,
+            children: b.tickets.map((t) => {
+              const [, icon, color] = TICKET_ICON.find(([re]) => re.test(t.status)) || [null, "circle-large-outline"];
+              return node(`${t.id}  ${t.title}`, { icon, color, description: t.status.replace(/^\S+\s*/, ""), command: "vixtab.showTicket", args: [t.id], tooltip: `${t.status}${t.after && t.after.length ? ` · after ${t.after.join(", ")}` : ""}` });
+            }),
+          }),
+        );
+      } else rows.push(node("Board", { icon: "checklist", description: b.ok ? "empty" : "none yet — the orchestrator creates it", tooltip: b.ok ? "" : b.error }));
+    }
+    rows.push(
+      node("Versions", { icon: "versions", description: `extension v${version}`, command: "vixtab.status", tooltip: "CLI, extension in each window, skills, board (vixtab status)" }),
+      node("Create playground", { icon: "beaker", command: "vixtab.createPlayground", tooltip: "A sandbox with five sample tickets" }),
+      node("Run doctor", { icon: "pulse", command: "vixtab.doctor" }),
+      node("Settings", { icon: "gear", description: scope() === "global" ? "skills: every project" : "skills: chosen projects", command: "workbench.action.openSettings", args: ["@ext:phanthaitrung.vixtab"] }),
+    );
+    return rows;
+  }
+}
+
+async function enableHere(panel) {
+  const folder = await pickFolder();
+  if (!folder) return;
+  if (needsSetup() && !(await setup(true))) return;
+  const r = await runCli(scope() === "global" ? ["skills", "install", "--global"] : ["skills", "install"], folder);
+  if (r.code !== 0) {
+    out.show(true);
+    vscode.window.showErrorMessage(`VixTab: could not set up ${folder} — see the VixTab output.`);
+  } else vscode.window.setStatusBarMessage("VixTab: this project can use VixTab now.", 8000);
+  panel.refresh(true);
+}
+
+async function showTicket(id) {
+  const folder = ((vscode.workspace.workspaceFolders || [])[0] || {}).uri;
+  const r = await runCli(["ticket", "show", id], folder ? folder.fsPath : undefined, true);
+  const doc = await vscode.workspace.openTextDocument({ language: "markdown", content: r.code === 0 ? r.stdout : `Could not read ${id}:\n\n${r.text}` });
+  await vscode.window.showTextDocument(doc, { preview: true });
 }
 
 // ── Activation ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -338,19 +475,40 @@ function activate(context) {
   context.subscriptions.push({ dispose: () => (w.close(), clearInterval(poll)) });
   scan();
 
+  const panel = new Panel();
+  const view = vscode.window.createTreeView("vixtab.panel", { treeDataProvider: panel });
+  const tick = setInterval(() => view.visible && panel.refresh(true), 60000); // the board changes while sessions work
+  context.subscriptions.push(
+    view,
+    { dispose: () => clearInterval(tick) },
+    view.onDidChangeVisibility((e) => e.visible && panel.refresh(false)),
+    vscode.window.onDidChangeWindowState((s) => s.focused && view.visible && panel.refresh(false)),
+    vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration("vixtab") && panel.refresh(false)),
+    vscode.workspace.onDidChangeWorkspaceFolders(() => panel.refresh(true)),
+  );
   context.subscriptions.push(
     vscode.commands.registerCommand("vixtab.orchestrate", orchestrate),
     vscode.commands.registerCommand("vixtab.setup", () => setup(false)),
     vscode.commands.registerCommand("vixtab.doctor", doctor),
+    vscode.commands.registerCommand("vixtab.status", showStatus),
+    vscode.commands.registerCommand("vixtab.refresh", () => panel.refresh(true)),
+    vscode.commands.registerCommand("vixtab.enableHere", () => enableHere(panel)),
+    vscode.commands.registerCommand("vixtab.showTicket", showTicket),
+    vscode.commands.registerCommand("vixtab.openSettings", () => vscode.commands.executeCommand("workbench.action.openSettings", "@ext:phanthaitrung.vixtab")),
     vscode.commands.registerCommand("vixtab.createPlayground", createPlayground),
     vscode.commands.registerCommand("vixtab.evenColumns", () => vscode.commands.executeCommand("workbench.action.evenEditorWidths")),
   );
 
   const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
   item.text = "$(rocket) VixTab";
-  item.tooltip = "VixTab: start an orchestrator tab for this folder";
   item.command = "vixtab.orchestrate";
-  const showItem = () => (vscode.workspace.getConfiguration("vixtab").get("statusBar") && (vscode.workspace.workspaceFolders || []).length && !isTicketWindow() ? item.show() : item.hide());
+  const showItem = () => {
+    item.tooltip = tooltip(context.extension.packageJSON.version);
+    return vscode.workspace.getConfiguration("vixtab").get("statusBar") && (vscode.workspace.workspaceFolders || []).length && !isTicketWindow() ? item.show() : item.hide();
+  };
+  // The tooltip reads the skill files: refresh it now and then (skills can be installed or removed from a terminal).
+  const refresh = setInterval(showItem, 30000);
+  context.subscriptions.push({ dispose: () => clearInterval(refresh) });
   showItem();
   context.subscriptions.push(item, vscode.workspace.onDidChangeConfiguration(showItem), vscode.workspace.onDidChangeWorkspaceFolders(showItem));
 

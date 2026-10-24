@@ -60,6 +60,14 @@ worktree git riêng và vào nhánh `main` qua hàng đợi gộp có chạy tes
 3. **Mở repo, bấm "VixTab"** ở thanh trạng thái: tab *Orchestrator* mở ra với `/vixtab-orchestrate` điền sẵn. Gõ mục tiêu rồi
    Enter.
 
+**Bảng VixTab ở thanh bên trái.** Biểu tượng VixTab nằm trên thanh hoạt động (Activity Bar) bên trái VS Code, cạnh biểu tượng
+của Claude Code. Bấm vào để mở bảng: nút *Start orchestrator*, dự án hiện tại đã dùng được VixTab chưa (chưa thì bấm một lần để
+cài), danh sách phiếu kèm trạng thái (bấm để đọc phiếu), phiên bản, playground, doctor và cài đặt.
+
+**Một dự án đã có VixTab chưa, bản nào?** Xem trên bảng VixTab, hoặc chạy `vixtab status` trong thư mục dự án (hoặc lệnh
+*VixTab: Show status*). Lệnh cho biết các phiên Claude Code của dự án có dùng được VixTab không, và phiên bản của CLI, của
+extension (đã cài, và bản mà từng cửa sổ đang chạy), của skill (mỗi tệp skill ghi số phiên bản đã cài nó), cùng bảng phiếu.
+
 Phạm vi được lưu lại, nâng cấp không làm đổi. Đổi trong *Settings ▸ VixTab: Skills Scope* hoặc bằng
 `vixtab skills scope global|project`. Ở cả hai phạm vi, skill điều phối không tự chạy chỉ vì gặp một từ chung chung như "điều phối":
 Claude sẽ hỏi bạn có muốn dùng VixTab không.
