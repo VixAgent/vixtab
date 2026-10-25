@@ -3,6 +3,7 @@ import {
   ANSWER_PLACEHOLDER, addQuestion, addRow, boardReadme, countQuestions, isModelName, parseRows, questionsOf, renderTicket, sessionModel, setRowStatus,
   setTicketStatus, STATUS, ticketModel,
 } from "../src/core/board.ts";
+import { unblocked } from "../src/commands/wait.ts";
 
 const c = { prefix: "T-", digits: 3, branch: "main" } as any;
 
@@ -88,5 +89,24 @@ describe("ticket file", () => {
     expect(q).toBeLessThan(r.text.indexOf("Stock or water?"));
     expect(r.text.indexOf("Salt?")).toBeLessThan(a);
     expect(r.text).not.toContain("_(none)_");
+  });
+});
+
+describe("wait: ready never comes before the done that unblocks it", () => {
+  let readme = boardReadme(c);
+  for (const [id, after] of [["T-003", []], ["T-004", []], ["T-005", ["T-003"]], ["T-006", ["T-003", "T-004"]]] as const)
+    readme = addRow(readme, { id, file: `${id}-x.md`, title: id, after: [...after] });
+  for (const id of ["T-003", "T-004"]) readme = setRowStatus(c, readme, id, STATUS.done("s"))!;
+  const rows = parseRows(c, readme), mine = new Set(["T-003"]);
+
+  test("only the done markers seen before the board was read count for the watched tickets", () => {
+    // `ticket done T-003` wrote ✅ DONE, then its marker while the waiter was reading the board: that pass reports nothing…
+    expect(unblocked(rows, mine, new Set(), () => true)).toEqual([]);
+    // …the next one sees the marker and reports "done T-003" together with these.
+    expect(unblocked(rows, mine, new Set(["T-003"]), () => true)).toEqual(["T-005", "T-006"]);
+  });
+  test("an After ticket we do not watch holds its dependents back while its done is still running here", () => {
+    expect(unblocked(rows, mine, new Set(["T-003"]), (x) => x !== "T-004")).toEqual(["T-005"]);
+    expect(unblocked(rows, new Set(["T-004"]), new Set(["T-004"]), () => true)).toEqual(["T-006"]);
   });
 });

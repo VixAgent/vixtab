@@ -54,6 +54,8 @@ export function readClaim(c: Config, id: string): Claim | null {
   }
 }
 export const isDone = (c: Config, id: string) => existsSync(join(claimDir(c, id), "done"));
+/** No `ticket done` is under way here: its done marker is written, or the ticket was never claimed on this machine. */
+export const settled = (c: Config, id: string) => isDone(c, id) || !existsSync(claimDir(c, id));
 export function activeTickets(c: Config): string[] {
   const d = join(c.locks, "tickets");
   return existsSync(d) ? readdirSync(d).filter((id) => isId(c, id) && !isDone(c, id) && existsSync(worktreeOf(c, id))) : [];

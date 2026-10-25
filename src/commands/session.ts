@@ -12,7 +12,7 @@ import { alive } from "../core/proc.ts";
 import { measure } from "../core/resources.ts";
 import { logTab, openTabByLabel, readTabLog, ticketStatus } from "../core/tabs.ts";
 import { platform } from "../platform/index.ts";
-import { fail, native, norm, pathKey, sleep } from "../core/util.ts";
+import { fail, native, norm, samePath, sleep } from "../core/util.ts";
 
 export const HELP = `vixtab session — fresh, labeled Claude Code tabs in VS Code
 
@@ -82,7 +82,7 @@ async function chooseWindow(c: Config, cwd: string, here: boolean): Promise<{ wi
     }
   }
   let best = 0, fewest = Infinity;
-  for (const w of windows().filter((x) => x.kind === "tickets" && x.pid !== base && x.folders.some((f) => pathKey(f) === pathKey(cwd)))) {
+  for (const w of windows().filter((x) => x.kind === "tickets" && x.pid !== base && x.folders.some((f) => samePath(f, cwd)))) {
     const n = await claudeTabCount(w.pid);
     if (n >= 0 && n < c.tabs.perWindowMax && n < fewest) [best, fewest] = [w.pid, n];
   }
@@ -146,7 +146,7 @@ export async function session(argv: string[]): Promise<void> {
         if (holders.length) fail(`a Claude tab labeled "${label}" is already open (window ${holders.join(", ")})`, 5);
         const target = await chooseWindow(c, cwd, has(a, "here"));
         const info = windowInfo(target.win);
-        if (info && !info.folders.some((x) => pathKey(x) === pathKey(cwd)))
+        if (info && !info.folders.some((x) => samePath(x, cwd)))
           fail(`the VS Code window ${target.win} has ${info.folders.map(native).join(", ") || "no folder"} open, but Claude Code only opens sessions of the window's own folder. Open ${native(cwd)} in VS Code (code -n "${native(cwd)}") and run this there, or pass --cwd <that folder>.`, 2);
         let id: string;
         try {

@@ -3,14 +3,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { has, parseArgs, str } from "../core/args.ts";
-import { readyRows } from "../core/board.ts";
+import { type Row, readyRows } from "../core/board.ts";
 import { codeOnly, readBoard, syncBoard } from "../core/boardstore.ts";
 import { isId, loadConfig, mainRef } from "../core/config.ts";
 import { fetchMain } from "../core/mainline.ts";
 import { alive } from "../core/proc.ts";
 import { git } from "../core/run.ts";
 import { fail, sleep } from "../core/util.ts";
-import { changedFilesOfActive, countQuestionsOnBoard, isDone } from "./ticket.ts";
+import { changedFilesOfActive, countQuestionsOnBoard, isDone, settled } from "./ticket.ts";
 
 export const HELP = `vixtab wait [--as <name>] [--every <seconds>] [--no-rebase] <id>[:<pid>] …
 
@@ -25,6 +25,17 @@ Any session can use it: a ticket session that needs another ticket's result runs
 `;
 
 type State = { seen: string[]; main?: string };
+
+/**
+ * The waiting tickets that one of ours (`mine`) just unblocked: TODO, and every After ticket ✅ DONE on `rows` and finished
+ * here. Ours count only when they are in `done`, the markers seen BEFORE `rows` were read: `ticket done` writes ✅ DONE first
+ * and its marker last, so "ready" comes in the same pass as their "done" or later, never before it (a marker written while
+ * the board is being read waits for the next pass). Any other After ticket must be settled (see ticket.ts).
+ */
+export const unblocked = (rows: Row[], mine: Set<string>, done: Set<string>, isSettled: (id: string) => boolean) =>
+  readyRows(rows)
+    .filter((r) => r.after.some((x) => mine.has(x)) && r.after.every((x) => (mine.has(x) ? done.has(x) : isSettled(x))))
+    .map((r) => r.id);
 
 export async function wait(argv: string[]): Promise<void> {
   const a = parseArgs(argv, ["as", "every"]);
@@ -52,8 +63,10 @@ export async function wait(argv: string[]): Promise<void> {
     const events: string[] = [];
     // "done" = the local marker, which `ticket done` writes LAST (after writing ✅ DONE and removing the worktree): the session
     // has nothing left to clean up, so the orchestrator may close its tab. ✅ DONE on the board can appear a moment earlier.
+    // The markers are read ONCE per pass, before the board: "ready" below uses this same reading.
+    const done = new Set(targets.filter((t) => isDone(c, t.id)).map((t) => t.id));
     for (const t of targets) {
-      if (isDone(c, t.id)) {
+      if (done.has(t.id)) {
         if (!seen.has(`done ${t.id}`)) events.push(`done ${t.id}`);
         continue;
       }
@@ -65,9 +78,7 @@ export async function wait(argv: string[]): Promise<void> {
     const rows = readBoard(c).rows;
     // A dependency chain moves on: report the waiting tickets that one of OUR tickets just unblocked.
     const mine = new Set(targets.map((t) => t.id));
-    // Only once those tickets of ours are fully done (marker), so "ready" comes together with — never before — their "done".
-    for (const r of readyRows(rows))
-      if (r.after.some((x) => mine.has(x)) && r.after.every((x) => !mine.has(x) || isDone(c, x)) && !seen.has(`ready ${r.id}`)) events.push(`ready ${r.id}`);
+    for (const id of unblocked(rows, mine, done, (x) => settled(c, x))) if (!seen.has(`ready ${id}`)) events.push(`ready ${id}`);
     for (const t of targets) {
       const row = rows.find((r) => r.id === t.id);
       if (row?.status.startsWith("❓")) {

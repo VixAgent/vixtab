@@ -21,7 +21,7 @@ import { boardDir, createBoard } from "../core/boardstore.ts";
 import { loadConfig } from "../core/config.ts";
 import { git, gitBash, gitOk, run } from "../core/run.ts";
 import { selfArgv, selfLine } from "../core/self.ts";
-import { HOME, IS_WIN, fail, native, norm, parseSizeMB, pathKey, sleep } from "../core/util.ts";
+import { HOME, IS_WIN, fail, native, norm, parseSizeMB, samePath, sleep } from "../core/util.ts";
 import { platform } from "../platform/index.ts";
 import { ensureSkillsFor } from "../core/skills.ts";
 import { BIN_DIR } from "./setup.ts";
@@ -325,7 +325,7 @@ async function demoTabs(dir: string, trust: boolean): Promise<void> {
   const P = join(dir, "project");
   if (!existsSync(P)) createPlayground(dir);
   // Claude Code opens only sessions of the window's own folder: the demo runs in a window that has the playground open.
-  let win = windows().find((w) => w.folders.some((f) => pathKey(f) === pathKey(P)))?.pid ?? null;
+  let win = windows().find((w) => w.folders.some((f) => samePath(f, P)))?.pid ?? null;
   if (!win) {
     const code = Bun.which("code") ?? fail(`open ${native(P)} in VS Code, then run this command again`, 2);
     console.log(`Opening the playground in a new VS Code window: ${native(P)}`);

@@ -11,7 +11,7 @@ import { fetchMain } from "../core/mainline.ts";
 import { ancestors } from "../core/proc.ts";
 import { measure } from "../core/resources.ts";
 import { run } from "../core/run.ts";
-import { native, pathKey } from "../core/util.ts";
+import { native, samePath } from "../core/util.ts";
 import { platform } from "../platform/index.ts";
 import { VERSION } from "../version.ts";
 import { BIN_DIR } from "./setup.ts";
@@ -49,7 +49,7 @@ export async function doctor(argv: string[]): Promise<void> {
       add("FAIL", "home", `${native(probe)} is not writable`, "set \"home\" in vixtab.config.json or VIXTAB_HOME");
     }
     // Sessions are created only for folders open in a VS Code window running VixTab (VS Code trusts them): no CLI trust prompt.
-    const inWindow = windows().some((w) => w.folders.some((f) => pathKey(f) === pathKey(c!.repo)));
+    const inWindow = windows().some((w) => w.folders.some((f) => samePath(f, c!.repo)));
     const t = folderTrusted(c.repo);
     if (inWindow) add("OK", "trust", "open in a VS Code window running VixTab: no trust prompt needed");
     else if (t) add("OK", "trust", "Claude Code trusts this folder");

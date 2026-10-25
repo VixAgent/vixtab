@@ -8,10 +8,13 @@ export const IS_WIN = process.platform === "win32";
 export const norm = (p: string) => p.replace(/\\/g, "/").replace(/(?<=[^/:])\/+$/, "");
 /** Comparison key for paths: Windows paths are case-insensitive and `d:` equals `D:`. */
 export const pathKey = (p: string) => (IS_WIN ? norm(p).toLowerCase() : norm(p));
+/** `p` is `root` or inside it; Windows 8.3 short names on either side are expanded first (see longPath). */
 export const isInside = (p: string, root: string) => {
-  const a = pathKey(p), b = pathKey(root);
+  const a = pathKey(longPath(p)), b = pathKey(longPath(root));
   return a === b || a.startsWith(b.endsWith("/") ? b : b + "/");
 };
+/** The same folder, also when one side is spelled with 8.3 short names (a shell or a window opened through one). */
+export const samePath = (a: string, b: string) => pathKey(longPath(a)) === pathKey(longPath(b));
 /**
  * Windows 8.3 short names (C:\Users\RUNNER~1\…) name the same folder as the long form; processes report whichever form
  * they were started with. Expand them before comparing. Elsewhere (and for paths without "~") the path is returned as is.

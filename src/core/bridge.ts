@@ -6,7 +6,7 @@ import { basename, join } from "node:path";
 import { platform } from "../platform/index.ts";
 import { alive, ancestors } from "./proc.ts";
 import { run } from "./run.ts";
-import { HOME, IS_WIN, fail, isInside, norm, pathKey, sleep } from "./util.ts";
+import { HOME, IS_WIN, fail, isInside, norm, samePath, sleep } from "./util.ts";
 
 /** The extension's Marketplace ID. Up to 0.6.0 it was LEGACY_EXTENSION_ID; setup and the extension itself remove that one. */
 export const EXTENSION_ID = "vixagent.vixtab";
@@ -44,7 +44,7 @@ export function findWindow(cwd = process.cwd()): number {
   const ws = windows();
   if (!ws.length) fail("no VS Code window with the VixTab extension is running (install the extension, or reload the window)", 7);
   const up = new Set(ancestors(process.pid, platform.processes()));
-  const exact = ws.filter((w) => w.folders.some((f) => pathKey(f) === pathKey(cwd)));
+  const exact = ws.filter((w) => w.folders.some((f) => samePath(f, cwd)));
   if (exact.length) return (exact.find((w) => up.has(w.pid)) ?? exact[0]).pid;
   const mine = ws.find((w) => up.has(w.pid));
   if (mine) return mine.pid;
@@ -112,7 +112,7 @@ export async function openTicketWindow(repo: string, waitMs = 60_000): Promise<n
   const r = run(IS_WIN ? ["cmd.exe", "/d", "/c", code, "-n", file] : [code, "-n", file]);
   if (r.code !== 0) fail(`code -n failed: ${(r.err || r.out).trim()}`, 7);
   for (const t = Date.now(); Date.now() - t < waitMs; await sleep(500)) {
-    const w = windows().find((x) => !before.has(x.pid) && x.folders.some((f) => pathKey(f) === pathKey(repo)));
+    const w = windows().find((x) => !before.has(x.pid) && x.folders.some((f) => samePath(f, repo)));
     if (w) return w.pid;
   }
   fail(`the new ticket window (${file}) did not register within ${waitMs / 1000} s (a trust prompt in VS Code? the screen locked?)`, 7);
@@ -121,7 +121,7 @@ export async function openTicketWindow(repo: string, waitMs = 60_000): Promise<n
 /** Wait until a window with exactly this folder registers (after `code -n <folder>`). */
 export async function waitForWindow(folder: string, ms = 45_000): Promise<number | null> {
   for (const t = Date.now(); Date.now() - t < ms; await sleep(500)) {
-    const w = windows().find((x) => x.folders.some((f) => pathKey(f) === pathKey(folder)));
+    const w = windows().find((x) => x.folders.some((f) => samePath(f, folder)));
     if (w) return w.pid;
   }
   return null;

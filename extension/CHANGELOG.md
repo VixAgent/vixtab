@@ -28,6 +28,10 @@
   it. `vixtab board path` prints the board folder and `vixtab board write <name> --file F` commits an extra file there; the
   orchestrator skill writes its HANDOVER.md that way and migrates an old board before dispatching when nothing is in flight.
 - The extension icon has a transparent background: only the window shape shows in the Extensions view.
+- `vixtab wait` never reports `ready <id>` before the `done` of the watched ticket that unblocks it (a done marker written
+  while a pass was reading the board could cause that), and it also waits until every other ticket in the After list has
+  finished `ticket done` on this machine. Folders spelled with Windows 8.3 short names (`C:\Users\RUNNER~1\…`) now match
+  their long form.
 - `vixtab ticket merge`, `vixtab heavy` and `vixtab lock` accept the command after `--` as one quoted line
   (`-- "bun run typecheck && bun test test/"`): it runs through bash with pipefail instead of failing with `ENOENT`.
 

@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { cpus, totalmem } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { git } from "./run.ts";
-import { fail, norm, parseSizeMB } from "./util.ts";
+import { fail, longPath, norm, parseSizeMB } from "./util.ts";
 
 export type Config = {
   /** Main checkout (worktrees share its .git). */
@@ -44,9 +44,9 @@ export type Config = {
 
 const clamp = (x: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, x));
 
-/** The main checkout that contains `cwd` (also when `cwd` is inside a linked worktree). */
+/** The main checkout that contains `cwd` (also when `cwd` is inside a linked worktree). Long form, as git prints it. */
 export function findRepo(cwd = process.cwd()): string {
-  if (process.env.VIXTAB_REPO) return norm(resolve(process.env.VIXTAB_REPO));
+  if (process.env.VIXTAB_REPO) return norm(longPath(resolve(process.env.VIXTAB_REPO)));
   const r = git(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir");
   if (r.code !== 0) fail(`not inside a git repository: ${cwd}\n(run vixtab from your project, or set VIXTAB_REPO)`, 2);
   const common = norm(r.out.trim());
@@ -81,9 +81,10 @@ export function loadConfig(cwd = process.cwd()): Config {
   const totalMB = Math.round(totalmem() / 1048576);
   const s = raw.sessions ?? {}, h = raw.heavy ?? {}, t = raw.tabs ?? {};
   const remote = raw.remote ?? "origin";
-  // "home" counts only in the project's own config: a config found in the home cannot move it.
+  // "home" counts only in the project's own config: a config found in the home cannot move it. Long form, like the repo:
+  // worktree paths, `board path` and the process matching of `procs` all start from it.
   const homeRaw = env.VIXTAB_HOME ?? (file === inRepo ? raw.home : undefined);
-  const home = norm(homeRaw ? (isAbsolute(homeRaw) ? homeRaw : resolve(repo, homeRaw)) : defaultHome(repo));
+  const home = norm(longPath(homeRaw ? (isAbsolute(homeRaw) ? homeRaw : resolve(repo, homeRaw)) : defaultHome(repo)));
   const num = (v: string | undefined, d: number) => (v !== undefined && v !== "" && !Number.isNaN(Number(v)) ? Number(v) : d);
   return {
     repo,

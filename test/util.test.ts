@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { appendFileSync, mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "../src/core/args.ts";
 import { Locks } from "../src/core/locks.ts";
-import { isInside, isReservedName, parseSizeMB, slugify } from "../src/core/util.ts";
+import { isInside, isReservedName, parseSizeMB, samePath, slugify } from "../src/core/util.ts";
 
 describe("util", () => {
   test("parseSizeMB", () => {
@@ -17,6 +17,19 @@ describe("util", () => {
     expect(isInside("/a/b/c", "/a/b")).toBe(true);
     expect(isInside("/a/bc", "/a/b")).toBe(false);
     expect(isInside("/a/b", "/a/b")).toBe(true);
+  });
+  test("isInside and samePath expand Windows 8.3 short names", () => {
+    if (process.platform !== "win32") return;
+    const dir = join(mkdtempSync(join(tmpdir(), "vixtab-")), "a-long-folder-name");
+    mkdirSync(join(dir, "sub"), { recursive: true });
+    const long = realpathSync.native(dir);
+    // cmd prints the 8.3 form (quotes for a path with spaces do not survive cmd /c: skipped then).
+    const short = dir.includes(" ") ? "" : Bun.spawnSync(["cmd.exe", "/d", "/c", `for %I in (${dir}) do @echo %~sI`]).stdout.toString().trim();
+    if (!short.includes("~")) return; // 8.3 names are turned off on this volume
+    expect(samePath(short, long)).toBe(true);
+    expect(isInside(join(short, "sub"), long)).toBe(true);
+    expect(isInside(long, short)).toBe(true);
+    expect(samePath(join(short, "sub"), long)).toBe(false);
   });
   test("Windows reserved names", () => {
     for (const n of ["con", "CON.c", "nul", "com1.txt", "LPT9"]) expect(isReservedName(n)).toBe(true);

@@ -1,6 +1,6 @@
 // The private board (<home>/board) and legacy boards (a folder on <remote>/<branch>), through the CLI, in throwaway repositories.
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { addRow, boardReadme, renderTicket } from "../src/core/board.ts";
@@ -238,8 +238,9 @@ describe("board migrate", () => {
   }, 60_000);
 
   test("board path and board write", () => {
-    const slash = (p: string) => p.replace(/\\/g, "/");
-    expect(slash(vt(P, "board", "path").out.trim())).toBe(slash(B));
+    // TEMP can be an 8.3 short path (CI runners: C:\Users\RUNNER~1\…), while the CLI prints the long form it gets from git.
+    const real = (p: string) => realpathSync.native(p).replace(/\\/g, "/");
+    expect(real(vt(P, "board", "path").out.trim())).toBe(real(B));
     writeFileSync(join(root, "handover.md"), "next: T-003\n");
     const w = vt(P, "board", "write", "HANDOVER.md", "--file", join(root, "handover.md"));
     expect(w.code).toBe(0);
