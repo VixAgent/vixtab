@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { ANSWER_PLACEHOLDER, addQuestion, addRow, boardReadme, countQuestions, parseRows, questionsOf, renderTicket, setRowStatus, setTicketStatus, STATUS } from "../src/core/board.ts";
+import {
+  ANSWER_PLACEHOLDER, addQuestion, addRow, boardReadme, countQuestions, isModelName, parseRows, questionsOf, renderTicket, sessionModel, setRowStatus,
+  setTicketStatus, STATUS, ticketModel,
+} from "../src/core/board.ts";
 
 const c = { prefix: "T-", digits: 3, branch: "main" } as any;
 
@@ -41,6 +44,33 @@ describe("ticket file", () => {
     expect(t).toContain("- **Area:** recipes/soup.md");
     expect(t).toContain(ANSWER_PLACEHOLDER);
     expect(questionsOf(t)).toBe("_(none)_");
+  });
+
+  test("the Model line is written only when a model is given and read back", () => {
+    expect(t).not.toContain("**Model:**");
+    expect(ticketModel(t)).toBeUndefined();
+    const m = renderTicket("T-006", "Icon", { area: "assets/icon.svg", model: "sonnet" });
+    expect(m).toContain("- **Area:** assets/icon.svg\n- **Model:** sonnet\n\n## Request");
+    expect(ticketModel(m)).toBe("sonnet");
+    expect(ticketModel(setTicketStatus(m, "⏳ DOING (s)"))).toBe("sonnet");
+    expect(ticketModel(m.replace("**Model:** sonnet", "**Model:** —"))).toBeUndefined();
+    expect(ticketModel(m.replace("**Model:** sonnet", "**Model:** default"))).toBeUndefined();
+    expect(ticketModel(m.replace("**Model:** sonnet", "**Model:** claude-haiku-5-5  ").replaceAll("\n", "\r\n"))).toBe("claude-haiku-5-5");
+  });
+
+  test("session open: --model over the ticket's Model line over the default", () => {
+    const withModel = renderTicket("T-006", "Icon", { model: "sonnet" });
+    expect(sessionModel("haiku", withModel)).toBe("haiku");
+    expect(sessionModel("default", withModel)).toBeUndefined();
+    expect(sessionModel(undefined, withModel)).toBe("sonnet");
+    expect(sessionModel(undefined, t)).toBeUndefined();
+    expect(sessionModel("claude-sonnet-5-5", null)).toBe("claude-sonnet-5-5");
+    expect(sessionModel(undefined, null)).toBeUndefined();
+  });
+
+  test("model names: aliases and ids pass, anything that could be typed as a command does not", () => {
+    for (const m of ["sonnet", "opus[1m]", "claude-sonnet-5-5", "us.anthropic.claude-sonnet-5-5-v1:0"]) expect(isModelName(m)).toBe(true);
+    for (const m of ["", "/model", "sonnet; rm", "a b", "—", "x".repeat(101)]) expect(isModelName(m)).toBe(false);
   });
 
   test("status line is replaced", () => {

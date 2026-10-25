@@ -3,12 +3,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { has, parseArgs, str } from "../core/args.ts";
-import { fetchMain, readBoard, readyRows } from "../core/board.ts";
+import { readyRows } from "../core/board.ts";
+import { codeOnly, readBoard, syncBoard } from "../core/boardstore.ts";
 import { isId, loadConfig, mainRef } from "../core/config.ts";
+import { fetchMain } from "../core/mainline.ts";
 import { alive } from "../core/proc.ts";
 import { git } from "../core/run.ts";
 import { fail, sleep } from "../core/util.ts";
-import { changedFilesOfActive, countQuestionsOnMain, isDone } from "./ticket.ts";
+import { changedFilesOfActive, countQuestionsOnBoard, isDone } from "./ticket.ts";
 
 export const HELP = `vixtab wait [--as <name>] [--every <seconds>] [--no-rebase] <id>[:<pid>] …
 
@@ -48,7 +50,7 @@ export async function wait(argv: string[]): Promise<void> {
     const st = load();
     const seen = new Set(st.seen);
     const events: string[] = [];
-    // "done" = the local marker, which `ticket done` writes LAST (after pushing ✅ DONE and removing the worktree): the session
+    // "done" = the local marker, which `ticket done` writes LAST (after writing ✅ DONE and removing the worktree): the session
     // has nothing left to clean up, so the orchestrator may close its tab. ✅ DONE on the board can appear a moment earlier.
     for (const t of targets) {
       if (isDone(c, t.id)) {
@@ -57,7 +59,9 @@ export async function wait(argv: string[]): Promise<void> {
       }
       if (t.pid && !alive(t.pid) && !seen.has(`gone ${t.id}:${t.pid}`)) events.push(`gone ${t.id}:${t.pid}`);
     }
-    fetchMain(c);
+    // The private board is read as it is: main is fetched for the rebase events (and for a legacy board) only.
+    if (has(a, "no-rebase")) syncBoard(c);
+    else fetchMain(c);
     const rows = readBoard(c).rows;
     // A dependency chain moves on: report the waiting tickets that one of OUR tickets just unblocked.
     const mine = new Set(targets.map((t) => t.id));
@@ -67,15 +71,13 @@ export async function wait(argv: string[]): Promise<void> {
     for (const t of targets) {
       const row = rows.find((r) => r.id === t.id);
       if (row?.status.startsWith("❓")) {
-        const key = `ask ${t.id} #${countQuestionsOnMain(c, t.id)}`;
+        const key = `ask ${t.id} #${countQuestionsOnBoard(c, t.id)}`;
         if (!seen.has(key)) events.push(key);
       }
     }
     const head = git(c.repo, "rev-parse", mainRef(c)).out.trim();
     if (!has(a, "no-rebase") && st.main && head && st.main !== head) {
-      const touched = new Set(
-        git(c.repo, "log", "--format=", "--name-only", `${st.main}..${head}`).out.split("\n").map((f) => f.trim()).filter((f) => f && !f.startsWith(`${c.board}/`)),
-      );
+      const touched = new Set(git(c.repo, "log", "--format=", "--name-only", `${st.main}..${head}`).out.split("\n").map((f) => f.trim()).filter(codeOnly(c)));
       if (touched.size) {
         for (const [id, files] of changedFilesOfActive(c)) {
           if (!mine.has(id)) continue;

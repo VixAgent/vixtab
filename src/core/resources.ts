@@ -20,7 +20,7 @@ export async function cpuBusy(ms = 1500): Promise<number> {
   return b.all > a.all ? (b.busy - a.busy) / (b.all - a.all) : 0;
 }
 
-export type Gate = { line: string; missing: string[]; freeMB: number };
+export type Gate = { line: string; missing: string[]; freeMB: number; cpu: number };
 
 /** Measure the machine against limits. `reservedMB` = RAM promised to work that started moments ago. */
 export async function measure(limits: { minFreeMB: number; maxSwapMB?: number; maxCommit: number; maxCpu: number; needCommitMB?: number }, reservedMB = 0): Promise<Gate> {
@@ -35,5 +35,5 @@ export async function measure(limits: { minFreeMB: number; maxSwapMB?: number; m
     missing.push(`commit ${commit.used}/${commit.limit}MB > ${Math.round(limits.maxCommit * 100)}%`);
   if (cpu > limits.maxCpu) missing.push(`CPU ${Math.round(cpu * 100)}% > ${Math.round(limits.maxCpu * 100)}%`);
   const line = `free_ram=${free}MB${reservedMB ? ` reserved=${reservedMB}MB` : ""}${limits.maxSwapMB !== undefined ? ` swap=${swap}MB` : ""}${commit ? ` commit=${commit.used}/${commit.limit}MB` : ""} cpu=${Math.round(cpu * 100)}%`;
-  return { line, missing, freeMB: free };
+  return { line, missing, freeMB: free, cpu };
 }

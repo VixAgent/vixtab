@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.8.0 — 2026-10-25
+
+- **Model per ticket.** `vixtab ticket new … --model <m>` writes a `- **Model:** <m>` line, and `vixtab session open <ID>
+  [--model <m>]` opens the tab on that model (`--model`, else the ticket's Model line, else your default). `<m>` is an alias
+  (`sonnet`, `opus`, `haiku`) or a model id. The model is set for that session only: the bootstrap CLI runs with `--model` and
+  answers one short prompt, and Claude Code keeps a resumed session's model. No settings file changes. `session open` prints
+  `model=<m>` or `model=default`; the orchestrator skill gives `--model` only to clearly simple tickets.
+- **The ticket board is private.** `vixtab init` creates it in `<home>/board` (next to the ticket worktrees, by default
+  `<repo>.vixtab/board`): a local git repository whose history records every claim, question, answer and status change, never
+  pushed. The config goes to `<home>/vixtab.config.json`; a `vixtab.config.json` in the repository is still used when there
+  is one. Nothing is committed in the project and only code reaches `<remote>/<branch>`. `--push` is ignored. Sessions write
+  their Answer in the ticket file on the board (claim prints its path) and `ticket done` commits it. Boards already on the main
+  branch keep working there, with a warning (also in `vixtab status` and `vixtab doctor`) until `vixtab board migrate` moves them.
+- **Tabs overview.** The VixTab panel has a **Tabs** section: every Claude tab running on this machine, in every project,
+  grouped by VS Code window (main or ticket window, number of Claude tabs, renderer load with ⚠ from 90 %), each with its
+  state (busy, idle, asking) and for how long, its ticket's status and the model VixTab opened it on; a summary line from the
+  resource gate (free RAM, CPU, can a new tab open); and *Finished and closed*, the tabs VixTab opened that have closed (last
+  50, collapsed, with *Clear*). It refreshes every 5 s while the panel is visible, renderer load at most once a minute. New
+  command `vixtab tabs [--json] [--load]` (and `tabs clear`); `session open` and `session close` record each tab in
+  `~/.cache/vixtab/tabs.jsonl`.
+- **`vixtab board migrate [--dry-run] [--keep-on-main] [--force]`** moves a board made by 0.7.0 or older (`tickets/` and
+  `vixtab.config.json` on `<remote>/<branch>`) into the private board: every file is copied into `<home>/board` in one
+  "import from <remote>/<branch> at <sha>" commit, the config into `<home>/vixtab.config.json`, then one commit on the main
+  branch ("Move the VixTab board out of the repository") removes both. It is refused while a ticket is ⏳ DOING or ❓ ASK, runs
+  under the merge lock, and a second run has nothing to do. The files stay in the remote's git history; VixTab never rewrites
+  it. `vixtab board path` prints the board folder and `vixtab board write <name> --file F` commits an extra file there; the
+  orchestrator skill writes its HANDOVER.md that way and migrates an old board before dispatching when nothing is in flight.
+- The extension icon has a transparent background: only the window shape shows in the Extensions view.
+- `vixtab ticket merge`, `vixtab heavy` and `vixtab lock` accept the command after `--` as one quoted line
+  (`-- "bun run typecheck && bun test test/"`): it runs through bash with pipefail instead of failing with `ENOENT`.
+
 ## 0.7.0 — 2026-10-25
 
 - **The extension is now `vixagent.vixtab`** (VixAgent brand), in the Marketplace and in *Settings ▸ Extensions*

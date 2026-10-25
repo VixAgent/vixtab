@@ -156,8 +156,8 @@ export function lifecycle(theme: Theme) {
   s.text(150, y + 126, "lock · worktree · branch", 16, { anchor: "middle", muted: true });
   s.text(440, y + 104, "work in the worktree,", 17, { anchor: "middle" });
   s.text(440, y + 126, "commit only your files", 16, { anchor: "middle", muted: true });
-  s.text(760, y + 104, "fetch · rebase · status", 17, { anchor: "middle" });
-  s.text(760, y + 126, "· tests · push", 16, { anchor: "middle", muted: true });
+  s.text(760, y + 104, "fetch · rebase · tests", 17, { anchor: "middle" });
+  s.text(760, y + 126, "· push to main", 16, { anchor: "middle", muted: true });
   s.text(1110, y + 104, "answer · stop processes", 17, { anchor: "middle" });
   s.text(1110, y + 126, "· remove the worktree", 16, { anchor: "middle", muted: true });
   // ask / answer
@@ -188,7 +188,7 @@ export function mergeQueue(theme: Theme) {
   });
   s.box(396, 120, 260, 236, { hue: "purple", fill: true, r: 16, width: 2.4 });
   s.text(526, 156, "merge-main lock", 21, { anchor: "middle", hue: "purple" });
-  ["1  fetch main", "2  rebase the ticket branch", "3  write its status cell", "4  run the tests", "5  push"].forEach((t, i) => s.text(420, 196 + i * 32, t, 17));
+  ["1  fetch main", "2  rebase the ticket branch", "3  run the tests", "4  push", "5  mark it done on the board"].forEach((t, i) => s.text(420, 196 + i * 32, t, 17));
   s.arrow(662, 238, 742, 238, { width: 2.2 });
   s.line(760, 238, 1230, 238, { width: 2.6 });
   s.text(1234, 228, "main", 18, { anchor: "end" });
@@ -201,9 +201,9 @@ export function mergeQueue(theme: Theme) {
   s.cross(1160, 160, 12);
   s.text(1160, 118, "T-004: tests red,", 16, { anchor: "middle", hue: "red" });
   s.text(1160, 138, "not pushed", 16, { anchor: "middle", hue: "red" });
-  s.text(640, 410, "Status cells are written after the rebase, so tickets claimed or finished together never conflict.", 18, { anchor: "middle", muted: true });
+  s.text(640, 410, "The board says done only after the push, and board edits never conflict with each other.", 18, { anchor: "middle", muted: true });
   s.text(640, 436, "Two tickets changed the same file? \"vixtab wait\" tells the later one to rebase and re-test.", 18, { anchor: "middle", muted: true });
-  return s.svg("Four tickets merge through one lock: fetch, rebase, status, tests, push; red tests never land");
+  return s.svg("Four tickets merge through one lock: fetch, rebase, tests, push, status; red tests never land");
 }
 
 export function gates(theme: Theme) {
@@ -282,8 +282,8 @@ export function architecture(theme: Theme) {
   // right side: git + extensions
   s.box(880, 80, 360, 110, { hue: "gray", fill: true, r: 14 });
   s.text(1060, 118, "git remote: main", 20, { anchor: "middle" });
-  s.text(1060, 146, "board (tickets/README.md)", 16, { anchor: "middle", muted: true });
-  s.text(1060, 168, "+ the code, merged in order", 16, { anchor: "middle", muted: true });
+  s.text(1060, 146, "the code, merged in order", 16, { anchor: "middle", muted: true });
+  s.text(1060, 168, "(the board stays on this machine)", 16, { anchor: "middle", muted: true });
   s.arrow(804, 300, 876, 170, { width: 1.8, bend: -20 });
   s.box(880, 250, 360, 100, { hue: "purple", fill: true, r: 14 });
   s.text(1060, 284, "VixTab extension", 20, { anchor: "middle", hue: "purple" });
@@ -320,15 +320,16 @@ export function install(theme: Theme) {
   return s.svg("Install VixTab, click Set up, click VixTab in the status bar and type the goal");
 }
 
+/** The extension icon: only the window shape, transparent around it, centred with an even margin (about 9 %). */
 export function icon(theme: Theme) {
   const s = new Sketch(256, 256, theme);
-  s.box(20, 30, 216, 196, { hue: "ink", fill: "paper", r: 26, width: 6 });
-  s.box(36, 66, 68, 144, { hue: "purple", fill: true, r: 10, width: 5 });
-  s.box(112, 66, 52, 144, { hue: "blue", fill: true, r: 10, width: 5 });
-  s.box(172, 66, 48, 144, { hue: "green", fill: true, r: 10, width: 5 });
-  s.line(20, 54, 236, 54, { width: 5 });
-  s.check(180, 150, 30, { width: 7 });
-  return s.svg("VixTab");
+  s.box(28, 37, 200, 182, { hue: "ink", fill: "paper", r: 24, width: 6 });
+  s.box(43, 71, 63, 133, { hue: "purple", fill: true, r: 10, width: 5 });
+  s.box(113, 71, 48, 133, { hue: "blue", fill: true, r: 10, width: 5 });
+  s.box(169, 71, 44, 133, { hue: "green", fill: true, r: 10, width: 5 });
+  s.line(28, 59.5, 228, 59.5, { width: 5 });
+  s.check(176, 148, 28, { width: 7 });
+  return s.svg("VixTab", { background: false });
 }
 
 /** Sessions wait for each other only when they must: After dependencies, questions, shared files, the resource gate. */

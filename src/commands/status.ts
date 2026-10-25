@@ -3,7 +3,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { has, parseArgs } from "../core/args.ts";
-import { fetchMain, parseRows, showMain } from "../core/board.ts";
+import { parseRows } from "../core/board.ts";
+import { boardDir, isLegacy, legacyNotice, readBoardFile, syncBoard } from "../core/boardstore.ts";
 import { EXTENSION_ID, LEGACY_EXTENSION_ID, callerWindow, windows } from "../core/bridge.ts";
 import { type Config, findRepo, loadConfig, mainRef } from "../core/config.ts";
 import { currentScope, globalSkillsDir, projectSkillsDir, savedScope, skillsStatus, type SkillState } from "../core/skills.ts";
@@ -17,7 +18,7 @@ export const HELP = `vixtab status [--json] [--offline]
 Run inside a project. Tells whether its Claude Code sessions can use VixTab, and every version involved:
 the vixtab CLI (this program and ~/.vixtab/bin), the VS Code extension (installed, and what each open window runs — a window
 keeps the version it started with until it is reopened), the skills (scope, copies, the version stamped in each), and the board.
---offline: do not fetch the main branch (the board is read from what is already fetched).`;
+--offline: do not fetch the main branch (a legacy board on it is read from what is already fetched).`;
 
 const cmp = (a: string, b: string) => {
   const x = a.split(".").map(Number), y = b.split(".").map(Number);
@@ -83,14 +84,18 @@ export async function status(argv: string[]): Promise<void> {
   const used = skillsHere === "project" ? project : skillsHere === "global" ? global : [];
   const usedVersion = used.map((s) => s.version).find(Boolean) ?? null;
 
-  let board: { state: "ok" | "none" | "unknown"; total?: number; open?: number; path?: string } = { state: "unknown" };
+  type Board = { state: "ok" | "none" | "unknown"; kind?: "private" | "legacy"; total?: number; open?: number; path?: string; warning?: string };
+  let board: Board = { state: "unknown" };
   if (c) {
-    if (!has(a, "offline")) fetchMain(c);
-    const readme = showMain(c, `${c.board}/README.md`);
-    if (readme === null) board = { state: "none", path: `${c.board}/README.md` };
+    if (!has(a, "offline")) syncBoard(c);
+    const legacy = isLegacy(c, true); // the board line below says it
+    const path = legacy ? `${c.board}/README.md` : native(`${boardDir(c)}/README.md`);
+    const readme = readBoardFile(c, "README.md");
+    if (readme === null) board = { state: "none", path };
     else {
       const rows = parseRows(c, readme);
-      board = { state: "ok", path: `${c.board}/README.md`, total: rows.length, open: rows.filter((r) => !r.status.startsWith("✅")).length };
+      board = { state: "ok", kind: legacy ? "legacy" : "private", path, total: rows.length, open: rows.filter((r) => !r.status.startsWith("✅")).length };
+      if (legacy) board.warning = legacyNotice(c);
     }
   }
   const cli = installedCliVersion();
@@ -128,6 +133,8 @@ export async function status(argv: string[]): Promise<void> {
   console.log(`  skills     scope ${scope === "global" ? "every project" : "only chosen projects"}${savedScope() ? "" : " (default)"}; this project uses ${skillsHere === "project" ? "its own copies" : skillsHere === "global" ? "the copies for every project" : "none"}${usedVersion ? ` v${usedVersion}` : ""}${old(usedVersion)}`);
   console.log(`             every project (${native(globalSkillsDir())}): ${describe(global)}`);
   if (repo) console.log(`             this project (${native(projectSkillsDir(repo))}): ${describe(project)}`);
-  console.log(`  board      ${board.state === "ok" ? `${board.path} on ${mainRef(c!)}: ${board.total} ticket(s), ${board.open} not done` : board.state === "none" ? `none on ${mainRef(c!)} (create one: vixtab init --push, or let the orchestrator do it)` : "—"}`);
+  const where = board.kind === "legacy" ? `${board.path} on ${mainRef(c!)}` : `${native(boardDir(c!))} (private)`;
+  console.log(`  board      ${board.state === "ok" ? `${where}: ${board.total} ticket(s), ${board.open} not done` : board.state === "none" ? "none (create one: vixtab init, or let the orchestrator do it)" : "—"}`);
+  if (board.warning) console.log(`             Warning: ${board.warning}`);
   if (!skillsHere) console.log(`Enable it: click VixTab in the status bar of this repository, or run ${scope === "global" ? "vixtab setup" : "vixtab skills install"}.`);
 }

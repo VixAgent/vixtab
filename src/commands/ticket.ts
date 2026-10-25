@@ -4,31 +4,42 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import { type Args, has, parseArgs, str } from "../core/args.ts";
 import {
-  ANSWER_PLACEHOLDER, STATUS, addQuestion, addRow, blockersOf, boardFilesOnMain, countQuestions, fetchMain, parseRows, questionsOf, readBoard,
-  readyRows, renderTicket, setRowStatus, setTicketStatus, ticketFileIn, ticketOnMain, writeStatusIn,
+  ANSWER_PLACEHOLDER, STATUS, addQuestion, addRow, blockersOf, countQuestions, modelArg, modelOrDefault, parseRows, questionsOf, readyRows,
+  renderTicket, setRowStatus, setTicketStatus,
 } from "../core/board.ts";
+import {
+  boardDir, boardFiles, boardWhere, codeOnly, commitOnBoard, isLegacy, readBoard, syncBoard, ticketFile, ticketFileName,
+  ticketOnBoard, writeStatusIn,
+} from "../core/boardstore.ts";
 import { type Config, branchOf, formatId, idNumber, idPattern, isId, loadConfig, mainRef, requireId, worktreeOf } from "../core/config.ts";
-import { commitOnMain, pushFromWorktree } from "../core/mainline.ts";
+import { fetchMain, pushFromWorktree } from "../core/mainline.ts";
 import { pickPort } from "../core/ports.ts";
 import { printProcesses, processesInside, stopPids } from "../core/proc.ts";
-import { git, gitOk, shellCommand } from "../core/run.ts";
+import { commandAfterDashes, git, gitOk, shellCommand } from "../core/run.ts";
 import { IS_WIN, fail, isInside, isReservedName, native, nowIso, sleep, slugify, today } from "../core/util.ts";
 
 export const HELP = `vixtab ticket — the board of tickets that parallel sessions work on
 
-  ticket list [--json]                         board on the main branch + who holds each ticket
-  ticket new "<title>" [--body-file F] [--area "files/functions"] [--after T-001,T-002]
-                                               add a ticket (next free id) straight to main; prints id= and file=
-  ticket show <id> [--questions]               print a ticket as it is on main
+The board is private: a local git repository in <home>/board (vixtab init), never pushed; its history is the audit log.
+A board made by older versions is a folder on <remote>/<branch>: it keeps working there, with a warning, until
+vixtab board migrate moves it into the private board.
+
+  ticket list [--json]                         the board + who holds each ticket
+  ticket new "<title>" [--body-file F] [--area "files/functions"] [--after T-001,T-002] [--model <m>]
+                                               add a ticket (next free id) to the board; prints id= and file=.
+                                               --model (sonnet, haiku, claude-sonnet-5-5…) writes "- **Model:** <m>": the
+                                               ticket's tab runs on that model (session open); without it, the default
+  ticket show <id> [--questions]               print a ticket as it is on the board
   ticket ready [--json]                        tickets that can start now (TODO, every After ticket ✅ DONE) and the ones
                                                that wait, with what they wait for
   ticket claim <id> [--as <session>] [--takeover] [--ignore-after]
-                                               lock + worktree + branch vixtab/<id> + ⏳ DOING on main; refused (exit 8)
+                                               lock + worktree + branch vixtab/<id> + ⏳ DOING; prints the ticket file
+                                               (on the board: the session writes its ## Answer there); refused (exit 8)
                                                while a ticket in its After list is not ✅ DONE
   ticket merge <id> [-- <test command…>]       rebase on main, test after rebase, push (red tests are never pushed)
-  ticket done <id>                             ✅ DONE on main, stop processes in the worktree, remove it
+  ticket done <id>                             commit the Answer + ✅ DONE, stop processes in the worktree, remove it
   ticket release <id> [--reason "…"]           give the ticket back (keeps a worktree that has unmerged work)
-  ticket ask <id> "<question>"                 ❓ ASK on main + the question in the ticket
+  ticket ask <id> "<question>"                 ❓ ASK + the question in the ticket
   ticket answer <id> "<answer>"                record the answer, back to ⏳ DOING
   ticket overlap [<id>…]                       files that two or more active tickets change (exit 1 if any)
 `;
@@ -120,19 +131,19 @@ function cleanLeftovers(W: string): void {
   if (files) console.log(`Warning: ${native(W)} still has ${files} file(s) outside git (kept) — check them, then delete the folder.`);
 }
 
-/** Board-only edit on main: status cell + ticket status line (+ optional extra edit of the ticket text). */
+/** Board edit (commitOnBoard): status cell + ticket status line (+ optional extra edit of the ticket text). */
 function statusEdit(c: Config, id: string, cell: string, line: string, more?: (t: string) => string) {
   return (read: (p: string) => string | null) => {
     const files: Record<string, string> = {};
-    const readme = read(`${c.board}/README.md`);
+    const readme = read("README.md");
     if (readme !== null) {
       const next = setRowStatus(c, readme, id, cell);
-      if (next !== null) files[`${c.board}/README.md`] = next;
+      if (next !== null) files["README.md"] = next;
     }
-    const f = boardFilesOnMain(c).find((n) => n.startsWith(`${id}-`) || n === `${id}.md`);
+    const f = ticketFileName(c, id);
     if (f) {
-      const t = read(`${c.board}/${f}`);
-      if (t !== null) files[`${c.board}/${f}`] = (more ?? ((x: string) => x))(setTicketStatus(t, line));
+      const t = read(f);
+      if (t !== null) files[f] = (more ?? ((x: string) => x))(setTicketStatus(t, line));
     }
     return files;
   };
@@ -144,37 +155,39 @@ function holderOf(c: Config, id: string): string {
 
 export async function ticket(argv: string[]): Promise<void> {
   const [action, ...rest] = argv;
-  const a: Args = parseArgs(rest, ["as", "body-file", "area", "after", "reason"]);
+  const a: Args = parseArgs(rest, ["as", "body-file", "area", "after", "reason", "model"]);
   const c = loadConfig();
   switch (action) {
     case "list":
     case "ls": {
-      fetchMain(c);
+      syncBoard(c);
       const { rows } = readBoard(c);
       const out = rows.map((r) => {
         const cl = readClaim(c, r.id);
         return { id: r.id, title: r.title, status: r.status, after: r.after, holder: cl?.session ?? null, since: cl?.at ?? null, done: isDone(c, r.id), worktree: existsSync(worktreeOf(c, r.id)) ? worktreeOf(c, r.id) : null };
       });
       if (has(a, "json")) return void console.log(JSON.stringify(out, null, 1));
-      if (!out.length) return void console.log(`(no tickets on ${mainRef(c)} — add one: vixtab ticket new "<title>")`);
+      if (!out.length) return void console.log(`(no tickets on the board — add one: vixtab ticket new "<title>")`);
       console.log(`${"Ticket".padEnd(8)} ${"Status".padEnd(28)} ${"After".padEnd(12)} Title`);
       for (const r of out) console.log(`${r.id.padEnd(8)} ${r.status.slice(0, 28).padEnd(28)} ${(r.after.join(",") || "—").padEnd(12)} ${r.title}`);
       return;
     }
 
     case "new": {
-      const title = a._[0] ?? fail('usage: vixtab ticket new "<title>" [--body-file F] [--area …] [--after T-001]', 2);
+      const title = a._[0] ?? fail('usage: vixtab ticket new "<title>" [--body-file F] [--area …] [--after T-001] [--model <m>]', 2);
       const bodyFile = str(a, "body-file");
       const body = bodyFile ? readFileSync(bodyFile, "utf8") : undefined;
       const after = (str(a, "after") ?? "").split(/[,\s]+/).filter(Boolean);
       for (const x of after) requireId(c, x);
+      const model = modelOrDefault(modelArg(a));
       let id = "", file = "";
-      await commitOnMain(c, `tickets: add ${title.slice(0, 60)}`, (read) => {
-        const readme = read(`${c.board}/README.md`) ?? fail(`no board on ${mainRef(c)} (run: vixtab init --push)`, 2);
+      syncBoard(c);
+      await commitOnBoard(c, `tickets: add ${title.slice(0, 60)}`, (read) => {
+        const readme = read("README.md") ?? fail(`no board: ${native(boardDir(c))} is missing (run: vixtab init)`, 2);
         const re = new RegExp(`^${idPattern(c)}`);
         const used = [
           ...parseRows(c, readme).map((r) => r.id),
-          ...boardFilesOnMain(c).map((f) => re.exec(f)?.[0]).filter((x): x is string => !!x),
+          ...boardFiles(c).map((f) => re.exec(f)?.[0]).filter((x): x is string => !!x),
           ...(existsSync(join(c.locks, "tickets")) ? readdirSync(join(c.locks, "tickets")).filter((x) => isId(c, x)) : []),
         ].map((x) => idNumber(c, x));
         id = formatId(c, Math.max(0, ...used) + 1);
@@ -182,24 +195,24 @@ export async function ticket(argv: string[]): Promise<void> {
         if (isReservedName(slug)) slug = `${slug}-task`;
         file = `${id}-${slug}.md`;
         return {
-          [`${c.board}/${file}`]: renderTicket(id, title, { area: str(a, "area"), after, body }),
-          [`${c.board}/README.md`]: addRow(readme, { id, file, title, after }),
+          [file]: renderTicket(id, title, { area: str(a, "area"), after, body, model }),
+          "README.md": addRow(readme, { id, file, title, after }),
         };
       });
-      console.log(`id=${id} file=${c.board}/${file}`);
+      console.log(`id=${id} file=${isLegacy(c) ? `${c.board}/${file}` : native(`${boardDir(c)}/${file}`)}`);
       return;
     }
 
     case "show": {
       const id = requireId(c, a._[0]);
-      fetchMain(c);
-      const t = ticketOnMain(c, id) ?? fail(`${id} not found on ${mainRef(c)}`, 2);
+      syncBoard(c);
+      const t = ticketOnBoard(c, id) ?? fail(`${id} not found on the board (${boardWhere(c)})`, 2);
       console.log(has(a, "questions") ? questionsOf(t.text) : t.text);
       return;
     }
 
     case "ready": {
-      fetchMain(c);
+      syncBoard(c);
       const { rows } = readBoard(c);
       const ready = readyRows(rows).map((r) => r.id);
       const waiting = rows.filter((r) => r.status.startsWith("☐") && !ready.includes(r.id)).map((r) => ({ id: r.id, waitsFor: blockersOf(rows, r) }));
@@ -227,14 +240,14 @@ export async function ticket(argv: string[]): Promise<void> {
       const W = worktreeOf(c, id);
       try {
         fetchMain(c);
-        if (!ticketOnMain(c, id)) fail(`${id} does not exist on ${mainRef(c)} (create it with vixtab ticket new)`, 2);
+        if (!ticketOnBoard(c, id)) fail(`${id} does not exist on the board (${boardWhere(c)}; create it with vixtab ticket new)`, 2);
         if (!takeover && !has(a, "ignore-after")) {
           const rows = readBoard(c).rows, row = rows.find((r) => r.id === id);
           const blockers = row ? blockersOf(rows, row) : [];
           if (blockers.length)
             fail(`${id} waits for ${blockers.map((b) => `${b.id} (${b.status})`).join(", ")}: every ticket in its After list must be ✅ DONE first. vixtab ticket ready lists what can start now (--ignore-after overrides).`, 8);
         }
-        await commitOnMain(c, `tickets: ${id} claimed by ${who}`, statusEdit(c, id, STATUS.doing(who), `${STATUS.doing(who)} — session **${who}**, worktree \`wt-${id}\`, branch \`${branchOf(id)}\` (${today()})`));
+        await commitOnBoard(c, `tickets: ${id} claimed by ${who}`, statusEdit(c, id, STATUS.doing(who), `${STATUS.doing(who)} — session **${who}**, worktree \`wt-${id}\`, branch \`${branchOf(id)}\` (${today()})`));
       } catch (e) {
         if (!takeover) rmSync(dir, { recursive: true, force: true });
         throw e;
@@ -249,14 +262,14 @@ export async function ticket(argv: string[]): Promise<void> {
       const vars: Record<string, string> = { VIXTAB_TICKET: id, VIXTAB_PORT: String(port), VIXTAB_WORKTREE: W };
       for (const [k, v] of Object.entries(c.env)) vars[k] = v.replaceAll("{port}", String(port)).replaceAll("{n}", String(n)).replaceAll("{ticket}", id).replaceAll("{worktree}", W);
       writeFileSync(join(W, ".vixtab.env"), `# Private resources of ${id} — load with: source .vixtab.env\n` + Object.entries(vars).map(([k, v]) => `export ${k}=${JSON.stringify(v)}`).join("\n") + "\n");
-      const tf = ticketFileIn(c, W, id);
+      const tf = ticketFile(c, id, W);
       console.log(`${takeover ? "Took over" : "Claimed"} ${id} for ${who}.`);
       console.log(`  worktree : ${native(W)}   (branch ${branchOf(id)})`);
       console.log(`  ticket   : ${tf ? native(tf) : "?"}`);
       console.log(`  first    : cd ${JSON.stringify(W)} && source .vixtab.env${c.setup ? ` && ${c.setup}` : ""}`);
       console.log(`  port     : ${port}`);
       console.log(`  merge    : vixtab ticket merge ${id} -- <test command>${c.test ? `   (default: ${c.test})` : ""}`);
-      console.log(`  finish   : fill in ## Answer, commit, vixtab ticket done ${id}`);
+      console.log(`  finish   : fill in ## Answer in the ticket file${isLegacy(c) ? ", commit it" : " (on the board, not in the worktree)"}, then vixtab ticket done ${id}`);
       return;
     }
 
@@ -265,7 +278,7 @@ export async function ticket(argv: string[]): Promise<void> {
       const W = worktreeOf(c, id);
       if (!existsSync(W)) fail(`no worktree ${native(W)} (claim the ticket first)`, 2);
       if (!clean(W)) fail("the worktree has uncommitted changes — commit them first", 2);
-      const test = a.rest.length ? a.rest : c.test ? shellCommand(c.test) : [];
+      const test = a.rest.length ? commandAfterDashes(a.rest) : c.test ? shellCommand(c.test) : [];
       await pushFromWorktree(c, W, test);
       return;
     }
@@ -275,19 +288,33 @@ export async function ticket(argv: string[]): Promise<void> {
       const W = worktreeOf(c, id);
       if (!existsSync(W)) fail(`no worktree ${native(W)}`, 2);
       if (!clean(W)) fail("the worktree has uncommitted changes — commit them first", 2);
-      const tf = ticketFileIn(c, W, id);
-      if (tf && readFileSync(tf, "utf8").includes(ANSWER_PLACEHOLDER)) fail("## Answer in the ticket is still empty — write commits, tests and notes there, commit, then run done", 2);
+      const legacy = isLegacy(c);
+      const tf = ticketFile(c, id, W);
+      if (tf && readFileSync(tf, "utf8").includes(ANSWER_PLACEHOLDER))
+        fail(`## Answer in the ticket is still empty — write commits, tests and notes in ${native(tf)}${legacy ? ", commit" : ""}, then run done`, 2);
       fetchMain(c);
-      const unmerged = gitOk(W, "diff", "--name-only", `${mainRef(c)}...HEAD`).split("\n").filter((f) => f && !f.startsWith(`${c.board}/`));
+      const unmerged = gitOk(W, "diff", "--name-only", `${mainRef(c)}...HEAD`).split("\n").filter(codeOnly(c));
       if (unmerged.length) fail(`${id} has changes that are not merged yet (${unmerged.slice(0, 5).join(", ")}${unmerged.length > 5 ? ", …" : ""}). Run vixtab ticket merge ${id} first — done never pushes untested code.`, 2);
       const who = holderOf(c, id);
-      await pushFromWorktree(c, W, [], () => {
-        const files = writeStatusIn(c, W, id, STATUS.done(who), `${STATUS.done(who)} — session **${who}** (${today()})`);
-        if (files.length) {
-          gitOk(W, "add", "--", ...files);
-          git(W, "commit", "-q", "-m", `tickets: ${id} done`);
-        }
-      });
+      const line = `${STATUS.done(who)} — session **${who}** (${today()})`;
+      // Private board: ✅ DONE (and the session's Answer, still uncommitted there) once the code is on main, under the merge lock.
+      // Legacy board: the status cells ride on the worktree branch, written after its rebase.
+      await pushFromWorktree(
+        c,
+        W,
+        [],
+        legacy
+          ? {
+              afterRebase: () => {
+                const files = writeStatusIn(c, W, id, STATUS.done(who), line);
+                if (files.length) {
+                  gitOk(W, "add", "--", ...files);
+                  git(W, "commit", "-q", "-m", `tickets: ${id} done`);
+                }
+              },
+            }
+          : { afterPush: () => commitOnBoard(c, `tickets: ${id} done`, statusEdit(c, id, STATUS.done(who), line)) },
+      );
       // The done marker is written LAST, once the worktree is gone (or its removal failed): `vixtab wait` reports "done" from it
       // and the orchestrator then closes this session's tab, so nothing may still be running here at that point.
       try {
@@ -311,11 +338,11 @@ export async function ticket(argv: string[]): Promise<void> {
           await stopInside(W, true);
         }
       }
-      fetchMain(c);
+      syncBoard(c);
       const row = readBoard(c).rows.find((r) => r.id === id);
       if (row && !row.status.startsWith("✅")) {
         const reason = str(a, "reason") ?? "released";
-        await commitOnMain(c, `tickets: ${id} released by ${who}`, statusEdit(c, id, STATUS.todo, `${STATUS.todo} — ${reason} by ${who} (${today()})`));
+        await commitOnBoard(c, `tickets: ${id} released by ${who}`, statusEdit(c, id, STATUS.todo, `${STATUS.todo} — ${reason} by ${who} (${today()})`));
       }
       rmSync(claimDir(c, id), { recursive: true, force: true });
       console.log(`Released ${id}.`);
@@ -329,7 +356,7 @@ export async function ticket(argv: string[]): Promise<void> {
       const who = holderOf(c, id);
       let count = 0;
       const asking = action === "ask";
-      await commitOnMain(
+      await commitOnBoard(
         c,
         `tickets: ${id} ${asking ? "question" : "answer"}`,
         statusEdit(c, id, asking ? STATUS.ask(who) : STATUS.doing(who), `${asking ? STATUS.ask(who) : STATUS.doing(who)} (${today()})`, (t) => {
@@ -363,19 +390,20 @@ export async function ticket(argv: string[]): Promise<void> {
   }
 }
 
-/** For each active ticket: files changed since it forked from main (committed + uncommitted), board excluded. */
+/** For each active ticket: files changed since it forked from main (committed + uncommitted), a legacy board excluded. */
 export function changedFilesOfActive(c: Config): Map<string, string[]> {
   const out = new Map<string, string[]>();
+  const code = codeOnly(c);
   for (const id of activeTickets(c)) {
     const W = worktreeOf(c, id);
     const base = git(W, "merge-base", mainRef(c), "HEAD").out.trim();
     if (!base) continue;
-    out.set(id, git(W, "diff", "--name-only", base).out.split("\n").map((f) => f.trim()).filter((f) => f && !f.startsWith(`${c.board}/`)));
+    out.set(id, git(W, "diff", "--name-only", base).out.split("\n").map((f) => f.trim()).filter(code));
   }
   return out;
 }
 
-export const countQuestionsOnMain = (c: Config, id: string) => {
-  const t = ticketOnMain(c, id);
+export const countQuestionsOnBoard = (c: Config, id: string) => {
+  const t = ticketOnBoard(c, id);
   return t ? countQuestions(t.text) : 0;
 };

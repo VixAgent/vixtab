@@ -9,6 +9,7 @@ import { has, parseArgs, str } from "../core/args.ts";
 import { loadConfig } from "../core/config.ts";
 import { locksOf } from "../core/mainline.ts";
 import { measure } from "../core/resources.ts";
+import { commandAfterDashes } from "../core/run.ts";
 import { fmtMB, parseSizeMB, sleep } from "../core/util.ts";
 import { platform } from "../platform/index.ts";
 
@@ -17,7 +18,8 @@ export const HELP = `vixtab heavy [--mem 6G] [--slots N] [--now] -- <command…>
   --mem 6G     memory cap of this run (default: heavy.mem in vixtab.config.json, 6G)
   --slots N    max concurrent heavy runs (default: max(2, CPUs/4))
   --now        no waiting, no slot: only apply the cap and low priority (nightly jobs)
-Waits (re-measuring every 10 s) until the resource gate admits the run. Exit code = the command's.`;
+Waits (re-measuring every 10 s) until the resource gate admits the run. Exit code = the command's.
+The command is an argv (-- bun test test/) or one quoted line (-- "bun run typecheck && bun test test/"), run by bash with pipefail.`;
 
 export async function heavy(argv: string[]): Promise<void> {
   const a = parseArgs(argv, ["mem", "slots"]);
@@ -25,7 +27,8 @@ export async function heavy(argv: string[]): Promise<void> {
   const c = loadConfig();
   const capMB = parseSizeMB(str(a, "mem"), c.heavy.memMB);
   const slots = Math.max(1, Number(str(a, "slots") ?? c.heavy.slots));
-  if (has(a, "now")) return void (process.exitCode = await platform.runCapped(a.rest, capMB));
+  const cmd = commandAfterDashes(a.rest);
+  if (has(a, "now")) return void (process.exitCode = await platform.runCapped(cmd, capMB));
   const L = locksOf(c);
   const slotName = (i: number) => `heavy-${i}`;
   let told = false;
@@ -56,7 +59,7 @@ export async function heavy(argv: string[]): Promise<void> {
       let code: number;
       try {
         console.error(`  heavy run started (cap ${fmtMB(capMB)}, ${platform.memoryCapKind()})`);
-        code = await platform.runCapped(a.rest, capMB);
+        code = await platform.runCapped(cmd, capMB);
       } finally {
         release();
       }

@@ -2,11 +2,12 @@
 import { accessSync, constants, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { has, parseArgs } from "../core/args.ts";
-import { fetchMain, showMain } from "../core/board.ts";
+import { boardDir, isLegacy, legacyNotice, readBoardFile } from "../core/boardstore.ts";
 import { EXTENSION_ID, LEGACY_EXTENSION_ID, WINDOWS, windows } from "../core/bridge.ts";
 import { findClaudeBinary, folderTrusted, sessionsDir } from "../core/claude.ts";
 import { currentScope, globalSkillsDir, projectSkillsDir, skillsStatus } from "../core/skills.ts";
 import { type Config, loadConfig, mainRef } from "../core/config.ts";
+import { fetchMain } from "../core/mainline.ts";
 import { ancestors } from "../core/proc.ts";
 import { measure } from "../core/resources.ts";
 import { run } from "../core/run.ts";
@@ -30,19 +31,20 @@ export async function doctor(argv: string[]): Promise<void> {
   let c: Config | null = null;
   try {
     c = loadConfig();
-    add("OK", "repo", `${native(c.repo)}${c.configFile ? "" : " (no vixtab.config.json: defaults)"}`);
+    add("OK", "repo", `${native(c.repo)}${c.configFile ? `, config ${native(c.configFile)}` : " (no vixtab.config.json: defaults)"}`);
   } catch (e) {
     add("WARN", "repo", String((e as Error).message).split("\n")[0], "run vixtab inside your project");
   }
   if (c) {
     if (fetchMain(c).code !== 0) add("FAIL", "remote", `cannot fetch ${mainRef(c)}`, `check \`git fetch ${c.remote} ${c.branch}\` (credentials, network, branch name in vixtab.config.json)`);
-    else if (showMain(c, `${c.board}/README.md`) === null) add("FAIL", "board", `no board on ${mainRef(c)} (${c.board}/README.md)`, "vixtab init --push");
-    else add("OK", "board", `${c.board}/README.md on ${mainRef(c)}`);
-    // Check without creating anything: the home is created by the first claim.
+    if (isLegacy(c, true)) add("WARN", "board", `${c.board}/README.md on ${mainRef(c)}: ${legacyNotice(c)}`, "vixtab board migrate");
+    else if (readBoardFile(c, "README.md") === null) add("FAIL", "board", `no board (${native(boardDir(c))})`, "vixtab init");
+    else add("OK", "board", `${native(boardDir(c))} (private)`);
+    // Check without creating anything: the home is created by vixtab init or the first claim.
     const probe = existsSync(c.home) ? c.home : dirname(c.home);
     try {
       accessSync(probe, constants.W_OK);
-      add("OK", "home", `${native(c.home)}${existsSync(c.home) ? "" : " (created on the first claim)"} — worktrees, locks`);
+      add("OK", "home", `${native(c.home)}${existsSync(c.home) ? "" : " (created by vixtab init)"} — board, worktrees, locks`);
     } catch {
       add("FAIL", "home", `${native(probe)} is not writable`, "set \"home\" in vixtab.config.json or VIXTAB_HOME");
     }

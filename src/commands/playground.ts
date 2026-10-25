@@ -1,5 +1,6 @@
-// vixtab playground — a self-contained sandbox (local bare "origin" + a tiny recipe-book project + 5 tickets) to try VixTab
-// without touching real repositories, plus scripted demos. `playground demo board` doubles as the end-to-end test.
+// vixtab playground — a self-contained sandbox (local bare "origin" + a tiny recipe-book project + a private board with 5
+// tickets) to try VixTab without touching real repositories, plus scripted demos. `playground demo board` doubles as the
+// end-to-end test.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -15,7 +16,9 @@ import T4 from "../../playground/tickets/T-004.md" with { type: "text" };
 import T5 from "../../playground/tickets/T-005.md" with { type: "text" };
 import { has, parseArgs, str } from "../core/args.ts";
 import { waitForWindow, windows } from "../core/bridge.ts";
-import { addRow, boardReadme, renderTicket, ticketBodyTemplate } from "../core/board.ts";
+import { addRow, boardReadme, renderTicket } from "../core/board.ts";
+import { boardDir, createBoard } from "../core/boardstore.ts";
+import { loadConfig } from "../core/config.ts";
 import { git, gitBash, gitOk, run } from "../core/run.ts";
 import { selfArgv, selfLine } from "../core/self.ts";
 import { HOME, IS_WIN, fail, native, norm, parseSizeMB, pathKey, sleep } from "../core/util.ts";
@@ -25,7 +28,8 @@ import { BIN_DIR } from "./setup.ts";
 
 export const HELP = `vixtab playground — try VixTab safely
 
-  playground create [<dir>]      sandbox in <dir> (default ~/vixtab-playground): origin.git, project/, 5 tickets
+  playground create [<dir>]      sandbox in <dir> (default ~/vixtab-playground): origin.git, project/, and the
+                                 project's private board with 5 tickets in project.vixtab/board
   playground demo board [--dir D] [--keep]
                                  scripted run, no Claude, no tokens: parallel claims, merge queue, red tests blocked,
                                  rebase and question events, done stops processes, abandoned lock taken over
@@ -68,31 +72,34 @@ export function createPlayground(dir: string, quiet = false): string {
     "recipes/apple-pie.md": APPLE,
     "recipes/omelette.md": OMELETTE,
     "recipes/tomato-soup.md": SOUP,
-    "vixtab.config.json": JSON.stringify({ board: "tickets", branch: "main", test: `${stableSelf()} playground check`, ports: { base: 4600 } }, null, 2) + "\n",
-    "tickets/TEMPLATE.md": ticketBodyTemplate(),
   };
-  const fakeConfig = { branch: "main" } as any;
-  let board = boardReadme(fakeConfig);
-  TICKETS.forEach((t, i) => {
-    const id = `T-00${i + 1}`;
-    const file = `${id}-${t.title.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}.md`;
-    files[`tickets/${file}`] = renderTicket(id, t.title, { area: t.area, after: t.after, body: t.body });
-    board = addRow(board, { id, file, title: t.title, after: t.after });
-  });
-  files["tickets/README.md"] = board;
   for (const [p, text] of Object.entries(files)) {
     mkdirSync(join(project, p, ".."), { recursive: true });
     writeFileSync(join(project, p), text);
   }
   gitOk(project, "add", "-A");
-  gitOk(project, "commit", "-q", "-m", "playground: a tiny recipe book with five tickets");
+  gitOk(project, "commit", "-q", "-m", "playground: a tiny recipe book");
   gitOk(project, "push", "-q", "-u", "origin", "main");
+  // The config and the board are private, in the project's home (<dir>/project.vixtab): nothing of them is in the project.
+  let c = loadConfig(project);
+  mkdirSync(c.home, { recursive: true });
+  writeFileSync(join(c.home, "vixtab.config.json"), JSON.stringify({ branch: "main", test: `${stableSelf()} playground check`, ports: { base: 4600 } }, null, 2) + "\n");
+  c = loadConfig(project);
+  const tickets: Record<string, string> = {};
+  let board = boardReadme(c);
+  TICKETS.forEach((t, i) => {
+    const id = `T-00${i + 1}`;
+    const file = `${id}-${t.title.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}.md`;
+    tickets[file] = renderTicket(id, t.title, { area: t.area, after: t.after, body: t.body });
+    board = addRow(board, { id, file, title: t.title, after: t.after });
+  });
+  createBoard(c, { ...tickets, "README.md": board });
   // The playground's Claude sessions need the skills (global copies, or the playground's own); the scripted demo runs no Claude.
   if (!quiet) ensureSkillsFor(project);
   if (!quiet) {
     console.log(`Playground ready: ${native(dir)}`);
     console.log(`  project : ${native(project)}   (origin: ${native(origin)}, a local bare repo)`);
-    console.log(`  tickets : vixtab ticket list    (run inside the project)`);
+    console.log(`  board   : ${native(boardDir(c))}   (private: vixtab ticket list, run inside the project)`);
     console.log(`  try     : open the project in VS Code, click "VixTab: Orchestrate", type: do all tickets on the board`);
     console.log(`  or      : vixtab playground demo board   (scripted, no Claude, no tokens)`);
   }
@@ -146,7 +153,7 @@ export async function demoBoard(dir: string | undefined, keep: boolean): Promise
   const root = dir ? norm(resolve(dir)) : norm(mkdtempSync(join(tmpdir(), "vixtab-demo-")));
   if (dir && existsSync(root)) rmSync(root, { recursive: true, force: true });
   const P = createPlayground(root, true);
-  const home = `${P}.vixtab`, wt = (id: string) => `${home}/wt-${id}`;
+  const home = loadConfig(P).home, B = `${home}/board`, wt = (id: string) => `${home}/wt-${id}`;
   const results: [string, boolean][] = [];
   let n = 0;
   const step = (title: string) => console.log(`\n── ${++n}. ${title}`);
@@ -160,17 +167,22 @@ export async function demoBoard(dir: string | undefined, keep: boolean): Promise
     gitOk(wt(id), "add", "--", ...files);
     gitOk(wt(id), "commit", "-q", "-m", msg);
   };
-  const ticketPath = (id: string) => readdirSync(join(wt(id), "tickets")).find((f) => f.startsWith(id))!;
+  const ticketPath = (id: string) => readdirSync(B).find((f) => f.startsWith(id))!;
+  // The session writes its Answer into the ticket file on the private board; ticket done commits it.
   const answer = (id: string, text: string) => {
-    const f = join(wt(id), "tickets", ticketPath(id));
+    const f = join(B, ticketPath(id));
     writeFileSync(f, readFileSync(f, "utf8").replace(/_\(the session that works on this ticket fills this in[^\n]*\)_/, text));
-    commit(id, `tickets: ${id} answer`, `tickets/${ticketPath(id)}`);
   };
+  const boardLog = () => gitOk(B, "log", "--format=%s");
   console.log(`Playground: ${native(root)}`);
   try {
     step("Four sessions claim T-001 … T-004 at the same moment");
     const claims = await Promise.all(["T-001", "T-002", "T-003", "T-004"].map((id, i) => vtAsync(["ticket", "claim", id, "--as", `session-${i + 1}`], P)));
-    expect("all four claims succeed (status cells are written after rebase, so adjacent rows never conflict)", claims.every((c) => c.code === 0), claims.map((c) => c.out).join("\n"));
+    expect(
+      "all four claims succeed, each one a commit on the private board (written under its lock, so adjacent rows never conflict)",
+      claims.every((c) => c.code === 0) && [1, 2, 3, 4].every((i) => boardLog().includes(`tickets: T-00${i} claimed by session-${i}`)),
+      claims.map((c) => c.out).join("\n") + "\n" + boardLog(),
+    );
     show(vt(["ticket", "list"], P));
 
     step("Another session tries to take T-001");
@@ -238,7 +250,13 @@ export async function demoBoard(dir: string | undefined, keep: boolean): Promise
     for (const id of ["T-001", "T-002", "T-003", "T-004"]) answer(id, `Done in the demo. Tests: vixtab playground check (green).`);
     const dones = await Promise.all(["T-001", "T-002", "T-003", "T-004"].map((id) => vtAsync(["ticket", "done", id], P)));
     await sleep(300);
-    expect("four tickets done, worktrees removed", dones.every((d) => d.code === 0) && ["T-001", "T-002", "T-003", "T-004"].every((id) => !existsSync(wt(id))), dones.map((d) => d.out).join("\n"));
+    const committed = (id: string) => git(B, "show", `HEAD:${ticketPath(id)}`).out;
+    expect(
+      "four tickets done, worktrees removed; each Answer and ✅ DONE committed on the board",
+      dones.every((d) => d.code === 0) &&
+        ["T-001", "T-002", "T-003", "T-004"].every((id) => !existsSync(wt(id)) && /Done in the demo/.test(committed(id)) && /Status:\*\* ✅ DONE/.test(committed(id))),
+      dones.map((d) => d.out).join("\n"),
+    );
     expect("the dev server left in T-002's worktree was stopped", server.exitCode !== null || server.killed || (await Promise.race([server.exited.then(() => true), sleep(3000).then(() => false)])));
     const depOut = await Promise.race([depWaiter.exited.then(() => new Response(depWaiter.stdout).text()), sleep(30_000).then(() => "")]);
     if (depWaiter.exitCode === null) depWaiter.kill();
@@ -252,7 +270,12 @@ export async function demoBoard(dir: string | undefined, keep: boolean): Promise
     show(ev);
     expect('the waiter reports "ask T-005 #1"', /^ask T-005 #1$/m.test(ev.out), ev.out);
     show(vt(["ticket", "answer", "T-005", "Vegetable stock."], P));
-    expect("the question and the answer are in the ticket on main", /Vegetable stock or water\?[\s\S]*A \(.*\):\*\* Vegetable stock\./.test(vt(["ticket", "show", "T-005", "--questions"], P).out));
+    expect(
+      "the question and the answer are in the ticket, each a commit on the board",
+      /Vegetable stock or water\?[\s\S]*A \(.*\):\*\* Vegetable stock\./.test(vt(["ticket", "show", "T-005", "--questions"], P).out) &&
+        /^tickets: T-005 answer$/m.test(boardLog()) && /^tickets: T-005 question$/m.test(boardLog()),
+      boardLog(),
+    );
     gitOk(wt("T-005"), "fetch", "-q", "origin", "main");
     gitOk(wt("T-005"), "rebase", "-q", "origin/main");
     write("T-005", "recipes/tomato-soup.md", readFileSync(join(wt("T-005"), "recipes/tomato-soup.md"), "utf8").replace("chicken stock", "vegetable stock"));
@@ -278,7 +301,15 @@ export async function demoBoard(dir: string | undefined, keep: boolean): Promise
     step("Final board");
     const list = vt(["ticket", "list"], P);
     show(list);
-    expect("all five tickets are ✅ DONE", (list.out.match(/✅ DONE/g) ?? []).length === 5, list.out);
+    expect("all five tickets are ✅ DONE, nothing left uncommitted on the board", (list.out.match(/✅ DONE/g) ?? []).length === 5 && gitOk(B, "status", "--porcelain").trim() === "", list.out);
+
+    step("The project's remote holds code only");
+    gitOk(P, "fetch", "-q", "origin", "main");
+    const published = gitOk(P, "ls-tree", "-r", "--name-only", "origin/main").split("\n").filter(Boolean);
+    const leaked = published.filter((f) => f === "vixtab.config.json" || f.startsWith("tickets/") || /(^|\/)T-\d{3}[-.]/.test(f));
+    const boardCommits = gitOk(P, "log", "--format=%s", "origin/main").split("\n").filter((s) => s.startsWith("tickets:"));
+    show({ code: 0, out: published.join("\n") });
+    expect("origin/main has no board file, no vixtab.config.json and no board commit", !leaked.length && !boardCommits.length, [...leaked, ...boardCommits].join("\n"));
   } catch (e) {
     expect(`unexpected error: ${(e as Error).message}`, false);
   } finally {

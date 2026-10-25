@@ -3,7 +3,7 @@
   "publisher": "vixagent",
   "displayName": "VixTab — parallel Claude Code tabs",
   "description": "Orchestrate many Claude Code sessions on one repo: one fresh, labeled tab per ticket in its own column, conflict-free merges, context-saving orchestration.",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "license": "MIT",
   "icon": "icon.png",
   "author": "phanthaitrung",
@@ -28,6 +28,7 @@
       { "command": "vixtab.refresh", "title": "Refresh", "category": "VixTab", "icon": "$(refresh)" },
       { "command": "vixtab.enableHere", "title": "Set up VixTab for this project", "category": "VixTab" },
       { "command": "vixtab.showTicket", "title": "Show ticket", "category": "VixTab" },
+      { "command": "vixtab.clearClosedTabs", "title": "Clear finished and closed tabs", "category": "VixTab", "icon": "$(clear-all)" },
       { "command": "vixtab.openSettings", "title": "Settings", "category": "VixTab", "icon": "$(gear)" }
     ],
     "viewsContainers": {
@@ -42,9 +43,14 @@
         { "command": "vixtab.refresh", "when": "view == vixtab.panel", "group": "navigation@2" },
         { "command": "vixtab.openSettings", "when": "view == vixtab.panel", "group": "navigation@3" }
       ],
+      "view/item/context": [
+        { "command": "vixtab.clearClosedTabs", "when": "view == vixtab.panel && viewItem == vixtab.closedTabs", "group": "inline" },
+        { "command": "vixtab.clearClosedTabs", "when": "view == vixtab.panel && viewItem == vixtab.closedTabs" }
+      ],
       "commandPalette": [
         { "command": "vixtab.showTicket", "when": "false" },
-        { "command": "vixtab.refresh", "when": "false" }
+        { "command": "vixtab.refresh", "when": "false" },
+        { "command": "vixtab.clearClosedTabs", "when": "false" }
       ]
     },
     "configuration": {

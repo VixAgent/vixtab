@@ -14,6 +14,32 @@ Start with `vixtab doctor` inside the repository: every FAIL line comes with its
 | 5 | a Claude tab with this label is already open | pick another label or close that tab |
 | 6 | resource gate closed (RAM, swap, commit, CPU, or `sessions.max`) | keep the ticket queued; `vixtab session count` shows what is missing |
 
+## "this board is on origin/main, published with your code"
+
+The board was made by VixTab 0.7.0 or older: a `tickets/` folder and a `vixtab.config.json` on your main branch, so every claim,
+question and answer is a commit pushed with your code. It keeps working. To move it into the private board (`<home>/board`,
+never pushed), wait until no ticket is ⏳ DOING or ❓ ASK, then:
+
+```bash
+vixtab board migrate --dry-run   # what would move, and where
+vixtab board migrate
+```
+
+One commit on `main` ("Move the VixTab board out of the repository") removes the folder and the config; pull `main` in your
+checkout afterwards. The files stay in the remote's git history: VixTab never rewrites it, that is your decision. The private
+board is on this machine only: another machine that used the same board on `main` finds no board afterwards and starts its own
+with `vixtab init`.
+
+- **Refused, exit 5: a ticket is in flight.** Its session reads and writes the board on `main`. Let it finish (`vixtab ticket
+  done`) or give it back (`vixtab ticket release <id>`), then migrate. `--force` migrates anyway: tell that session its ticket
+  file is now on the private board and that it must not commit `tickets/`.
+- **Refused, exit 2: the config sets `home`.** Once `vixtab.config.json` is off `main`, the config is read from the default
+  home, where it cannot move the home. Set `VIXTAB_HOME` to that folder for every shell that runs `vixtab`, or keep the files
+  on `main` with `--keep-on-main`.
+- **Exit 4: the board on `main` changed during the migration** (a push that did not take VixTab's lock, for example from
+  another machine). The private board holds the import; nothing was removed from `main`. Compare the two, then remove
+  `tickets/` by hand.
+
 ## Tabs close slowly
 
 Closing a Claude tab makes Claude Code shut its CLI down, MCP servers included; that took up to a minute in tests on Linux.

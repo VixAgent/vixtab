@@ -1,6 +1,6 @@
 {
   "name": "vixtab",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Orchestrate parallel Claude Code sessions: one fresh labeled VS Code tab per ticket, conflict-free merges, context-saving orchestration. Needs the VixTab VS Code extension (it installs the vixtab CLI).",
   "author": { "name": "phanthaitrung" },
   "homepage": "https://github.com/VixAgent/vixtab",

@@ -22,6 +22,12 @@ see whether this project can use VixTab and which version, set it up in one clic
 status (click one to read it), open the playground, the doctor and the settings. *VixTab: Show status* (or `vixtab status`)
 lists every version: the CLI, the extension in each open window, the skills.
 
+The panel's **Tabs** section shows every Claude tab running on this machine, in every project, by VS Code window: a summary
+(tabs, busy, idle, asking, windows, free RAM and CPU, whether a new tab can open), each window with its renderer load (⚠ from
+90 %: its tabs lag), each tab with its state and for how long, its ticket's status and its model (click to read the ticket),
+and *Finished and closed*: the tabs VixTab opened that have closed (last 50, with *Clear*). It refreshes every 5 s while the
+panel is visible. Windows without the VixTab extension are not listed.
+
 Want to see it first? Run *VixTab: Create playground*: a sandbox with five sample tickets that cannot reach GitHub or your
 real projects.
 
@@ -34,7 +40,7 @@ Tickets run in parallel by default. A session waits only for a real reason, and 
 - **Dependencies.** A ticket created with `--after T-003` cannot be claimed before T-003 is ✅ DONE: the claim is refused and
   says what it waits for. `vixtab ticket ready` lists what can start now. The moment T-003 is done, the orchestrator is woken
   with `ready T-005` and opens it.
-- **Questions.** A blocked session asks (`vixtab ticket ask`) and stops. The question is written into the ticket on `main`,
+- **Questions.** A blocked session asks (`vixtab ticket ask`) and stops. The question is written into the ticket on the board,
   the orchestrator wakes up, answers, or asks you when only you can, and the session continues.
 - **Shared files.** Two tickets that change the same file still run side by side. When the first one lands, the second is told
   to rebase and re-run its tests. `vixtab ticket overlap` shows every file shared by active tickets.
@@ -55,6 +61,7 @@ Tickets run in parallel by default. A session waits only for a real reason, and 
 - **Waiting costs nothing.** A background `vixtab wait` wakes the orchestrator only on events: `done`, `ready`, `ask`,
   `rebase`, `gone`. There is no polling loop in the conversation.
 - **Opening a tab costs nothing.** No model turn runs to create the session, and the tab uses your default model.
+- **Cheaper models for simple tickets.** `vixtab ticket new … --model sonnet` runs that ticket's tab on Sonnet; your default stays.
 - **Handover.** When the orchestrator's own context grows, it writes a short note, opens *Orchestrator-2* and steps aside.
 
 ## A tab per ticket, a renderer per window
@@ -73,12 +80,20 @@ its tabs and its busiest renderer thread.
 
 - **Atomic claims:** two sessions can never take the same ticket.
 - **One worktree and branch per ticket**, and a private port in `.vixtab.env` that moves out of the way when the port is busy.
-- **One merge at a time:** fetch, rebase, write the board status after the rebase, run the tests on exactly what will be
-  pushed, then push. Tickets claimed or finished at the same moment never conflict on the board.
+- **One merge at a time:** fetch, rebase, run the tests on exactly what will be pushed, push, and only then mark the ticket
+  done on the board. Tickets claimed or finished at the same moment never conflict on the board.
 - **Red tests never land.** Tests always run with `pipefail`, so `… | tail` cannot hide a failure, and `done` refuses to
   finish a ticket whose code is not merged.
 
 ![The life of a ticket](https://raw.githubusercontent.com/VixAgent/vixtab/main/docs/images/lifecycle.png)
+
+## A private board
+
+The tickets, their questions and answers, and who worked on what live in a git repository on your machine, next to the
+project (`<repo>.vixtab/board`, printed by `vixtab board path`). It is never pushed: your remote receives only code. To back
+it up, copy the folder. A board made by VixTab 0.7.0 or older sits in `tickets/` on your main branch and keeps working with a
+warning; `vixtab board migrate` moves it into the private board and removes it from `main` in one commit (`--dry-run` first
+shows what would move). The old files stay in your remote's git history; rewriting it is your decision.
 
 ## The machine stays responsive
 
@@ -101,7 +116,7 @@ its tabs and its busiest renderer thread.
 
 | | What you see |
 |---|---|
-| `vixtab playground demo board` | 4 parallel claims, an early claim refused, a duplicate claim refused, the overlap report, the merge queue, red tests blocked, `rebase`, `ready` and `ask` events, a leftover process stopped, an abandoned lock taken over (19 checks) |
+| `vixtab playground demo board` | 4 parallel claims, an early claim refused, a duplicate claim refused, the overlap report, the merge queue, red tests blocked, `rebase`, `ready` and `ask` events, a leftover process stopped, an abandoned lock taken over, no board file on the remote (20 checks) |
 | `vixtab playground demo tabs` | three labeled Claude tabs opening to the right, evened, then closed |
 | `vixtab playground demo heavy` | five heavy runs sharing two slots; a run over its memory cap is stopped |
 | *VixTab: Create playground*, then **VixTab** | the real thing: on Windows, 5 tickets (a question and a dependency included) were done in about 6½ minutes |

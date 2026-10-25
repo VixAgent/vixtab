@@ -6,13 +6,14 @@ import { basename, join } from "node:path";
 import { platform } from "../platform/index.ts";
 import { alive, ancestors } from "./proc.ts";
 import { run } from "./run.ts";
-import { HOME, IS_WIN, fail, isInside, pathKey, sleep } from "./util.ts";
+import { HOME, IS_WIN, fail, isInside, norm, pathKey, sleep } from "./util.ts";
 
 /** The extension's Marketplace ID. Up to 0.6.0 it was LEGACY_EXTENSION_ID; setup and the extension itself remove that one. */
 export const EXTENSION_ID = "vixagent.vixtab";
 export const LEGACY_EXTENSION_ID = "phanthaitrung.vixtab";
 
-export const CACHE = join(HOME, ".cache", "vixtab");
+/** VIXTAB_CACHE_DIR is for tests (fixture folders): the extension always uses ~/.cache/vixtab. */
+export const CACHE = process.env.VIXTAB_CACHE_DIR ? norm(process.env.VIXTAB_CACHE_DIR) : join(HOME, ".cache", "vixtab");
 export const COMMANDS = join(CACHE, "commands");
 export const WINDOWS = join(CACHE, "windows");
 

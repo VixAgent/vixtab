@@ -1,4 +1,5 @@
-// vixtab.config.json (optional, at the repo root) + defaults + VIXTAB_* environment overrides.
+// vixtab.config.json + defaults + VIXTAB_* environment overrides. The file is <repo>/vixtab.config.json when the project has one
+// (committed on purpose by a team, or by older versions), else <home>/vixtab.config.json (what vixtab init writes: private).
 import { existsSync, readFileSync } from "node:fs";
 import { cpus, totalmem } from "node:os";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
@@ -9,13 +10,13 @@ export type Config = {
   /** Main checkout (worktrees share its .git). */
   repo: string;
   configFile: string | null;
-  /** Folder with the board (README.md table) and the ticket files, relative to the repo root. */
+  /** Legacy boards only: the board folder on the main branch, relative to the repo root (a private board is <home>/board). */
   board: string;
   prefix: string;
   digits: number;
   remote: string;
   branch: string;
-  /** Where VixTab keeps ticket worktrees, locks and logs (outside the repo). */
+  /** Where VixTab keeps the private board, its config, ticket worktrees, locks and logs (outside the repo). */
   home: string;
   locks: string;
   ports: { base: number };
@@ -53,9 +54,16 @@ export function findRepo(cwd = process.cwd()): string {
   return norm(dirname(common));
 }
 
+/** The home when the config does not set one: VIXTAB_HOME, else <parent>/<repo>.vixtab. Its vixtab.config.json is found here. */
+export const defaultHome = (repo: string) => {
+  const h = process.env.VIXTAB_HOME;
+  return norm(h ? (isAbsolute(h) ? h : resolve(repo, h)) : join(dirname(repo), `${basename(repo)}.vixtab`));
+};
+
 export function loadConfig(cwd = process.cwd()): Config {
   const repo = findRepo(cwd);
-  const file = join(repo, "vixtab.config.json");
+  const inRepo = join(repo, "vixtab.config.json"), inHome = join(defaultHome(repo), "vixtab.config.json");
+  const file = existsSync(inRepo) ? inRepo : existsSync(inHome) ? inHome : null;
   let raw: any = {};
   let configFile: string | null = null;
   const parse = (text: string, where: string) => {
@@ -65,7 +73,7 @@ export function loadConfig(cwd = process.cwd()): Config {
       fail(`${where}: invalid JSON (${(e as Error).message})`, 2);
     }
   };
-  if (existsSync(file)) {
+  if (file) {
     raw = parse(readFileSync(file, "utf8"), file);
     configFile = norm(file);
   }
@@ -73,8 +81,9 @@ export function loadConfig(cwd = process.cwd()): Config {
   const totalMB = Math.round(totalmem() / 1048576);
   const s = raw.sessions ?? {}, h = raw.heavy ?? {}, t = raw.tabs ?? {};
   const remote = raw.remote ?? "origin";
-  const homeRaw = env.VIXTAB_HOME ?? raw.home;
-  const home = norm(homeRaw ? (isAbsolute(homeRaw) ? homeRaw : resolve(repo, homeRaw)) : join(dirname(repo), `${basename(repo)}.vixtab`));
+  // "home" counts only in the project's own config: a config found in the home cannot move it.
+  const homeRaw = env.VIXTAB_HOME ?? (file === inRepo ? raw.home : undefined);
+  const home = norm(homeRaw ? (isAbsolute(homeRaw) ? homeRaw : resolve(repo, homeRaw)) : defaultHome(repo));
   const num = (v: string | undefined, d: number) => (v !== undefined && v !== "" && !Number.isNaN(Number(v)) ? Number(v) : d);
   return {
     repo,

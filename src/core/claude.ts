@@ -1,5 +1,5 @@
 // Claude Code on this machine: config dir, the session registry, transcripts, the CLI binary that ships with the VS Code
-// extension, and creating a labeled session without a model turn.
+// extension, and creating a labeled session (without a model turn, or with one on a chosen model).
 //
 // These are NOT public APIs of Claude Code. They were checked with Claude Code 2.1.280 (Linux, VS Code Remote SSH) and 2.1.308–2.1.310
 // (Windows). `vixtab doctor` re-checks each of them.
@@ -103,9 +103,28 @@ const flat = (s: string) => s.replace(ANSI, "").replace(/\s+/g, "");
 
 export class TrustNeeded extends Error {}
 
+/** Model Claude Code records on the error messages it writes itself (an unknown model, an API error). */
+const SYNTHETIC = "<synthetic>";
+type Answer = { model: string; text: string; done: boolean };
+/** The last assistant message of a transcript: its model, its text and whether the turn ended. */
+export function lastAnswer(transcript: string): Answer | null {
+  if (!existsSync(transcript)) return null;
+  const lines = readFileSync(transcript, "utf8").split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].includes('"type":"assistant"')) continue;
+    try {
+      const l = JSON.parse(lines[i]);
+      if (l.type !== "assistant" || l.isMeta || typeof l.message?.model !== "string") continue;
+      const text = (Array.isArray(l.message.content) ? l.message.content : []).map((b: any) => b?.text ?? "").join("");
+      return { model: l.message.model, text, done: !!l.message.stop_reason || l.message.model === SYNTHETIC };
+    } catch {}
+  }
+  return null;
+}
+
 /**
- * Create a Claude Code session with a custom title, without any model turn (so the tab later runs the default model and
- * spends no tokens): run the interactive CLI in a pseudo-terminal, type `/rename <label>`, then `/exit`.
+ * Create a Claude Code session with a custom title, without any model turn unless `model` is given (so the tab later runs
+ * the default model and spends no tokens): run the interactive CLI in a pseudo-terminal, type `/rename <label>`, then `/exit`.
  *
  * Folder trust. `vscodeTrusted`: the folder is open in a VS Code window where the VixTab extension runs — VS Code runs
  * extensions only in workspaces it trusts, and the Claude Code tab there runs without the CLI's own trust prompt. The
@@ -113,15 +132,20 @@ export class TrustNeeded extends Error {}
  * does not stop at "Do you trust the files in this folder?". It only types /rename and /exit (no model turn, no tool), and the
  * variable is not passed on: the real session runs in the VS Code tab with VS Code's environment. Nothing is persisted to
  * ~/.claude.json. Otherwise the prompt is answered only when `trust` is true (the user said so), else TrustNeeded is thrown.
+ *
+ * `model`: the tab runs on that model instead of the default. On resume Claude Code restores the model of the session's last
+ * assistant message (unless --model or ANTHROPIC_MODEL is given), and the VS Code tab starts its CLI without --model. So the
+ * bootstrap CLI gets `--model <m>` (a flag for that process only: no settings file is written, unlike `/model`) and sends one
+ * short prompt that the model answers. That one turn is the only cost.
  */
-export async function createLabeledSession(label: string, cwd: string, trust: boolean, o: { vscodeTrusted?: boolean } = {}): Promise<string> {
+export async function createLabeledSession(label: string, cwd: string, trust: boolean, o: { vscodeTrusted?: boolean; model?: string } = {}): Promise<string> {
   const bin = findClaudeBinary() ?? fail("Claude Code CLI not found: install the Claude Code VS Code extension (or set VIXTAB_CLAUDE_BIN)", 3);
   const id = crypto.randomUUID();
   const transcript = transcriptPath(cwd, id);
   const titled = () => existsSync(transcript) && readFileSync(transcript, "utf8").includes('"type":"custom-title"');
   let screen = "";
   const dec = new TextDecoder();
-  const p: any = Bun.spawn([bin, "-n", label, "--session-id", id], {
+  const p: any = Bun.spawn([bin, "-n", label, "--session-id", id, ...(o.model ? ["--model", o.model] : [])], {
     cwd: native(cwd),
     env: o.vscodeTrusted ? { ...cleanEnv(), CLAUDE_CODE_SANDBOXED: "1" } : cleanEnv(),
     terminal: {
@@ -184,6 +208,15 @@ export async function createLabeledSession(label: string, cwd: string, trust: bo
       for (let i = 0; i < 20 && !titled(); i++) await sleep(500);
     }
     if (!titled()) abort(3, `Claude CLI did not write the session title to ${native(transcript)}`);
+    if (o.model) {
+      type(`VixTab opened this tab on the ${o.model} model. Reply with one word: ready`);
+      await sleep(500);
+      type("\r");
+      let a: Answer | null = null;
+      for (let i = 0; i < 240 && !(a = lastAnswer(transcript))?.done; i++) await sleep(500);
+      if (!a?.done) abort(3, `the ${o.model} model did not answer within 120 s`);
+      else if (a.model === SYNTHETIC) abort(3, `the model "${o.model}" did not answer: ${a.text.slice(0, 300)}`);
+    }
     type("/exit");
     await sleep(300);
     type("\r");

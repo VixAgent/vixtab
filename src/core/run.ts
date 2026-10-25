@@ -44,6 +44,14 @@ export function shellCommand(line: string): string[] {
   return IS_WIN ? ["cmd.exe", "/d", "/s", "/c", line] : ["sh", "-c", line];
 }
 
+/**
+ * The command given after `--`. One argument with whitespace or shell syntax (`-- "bun run typecheck && bun test test/"`) is a
+ * command line and runs through `shellCommand`, with pipefail; anything else (`-- bun test`, `-- make`) is an argv, kept as it is.
+ */
+export function commandAfterDashes(rest: string[]): string[] {
+  return rest.length === 1 && /[\s&|;<>]/.test(rest[0]) ? shellCommand(rest[0]) : rest;
+}
+
 /** A test command given after `--`: `bash -c '…'` / `sh -c '…'` get pipefail too (sh becomes bash where sh lacks it). */
 export function withPipefail(cmd: string[]): string[] {
   const m = /^(.*[\\/])?(bash|sh)(\.exe)?$/i.exec(cmd[0] ?? "");

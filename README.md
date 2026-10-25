@@ -34,9 +34,12 @@ the ticket is done. Every ticket works in its own git worktree and lands on `mai
 - **A tab per ticket, and a renderer per window.** Each tab is labeled with the ticket id and opens without stealing focus:
   in the orchestrator's own window first (up to 6 Claude tabs: 3 columns, then stacked), then stacked in **ticket windows** — separate VS Code
   windows, five Claude tabs each — because all tabs of one window share one renderer thread. Creating a tab runs no model turn:
-  it costs no tokens and the tab uses your default model. [Why ↓](#one-renderer-per-window)
+  it costs no tokens and the tab uses your default model. A simple ticket can run on a cheaper model instead
+  (`ticket new … --model sonnet`): one short turn sets it for that tab only. [Why ↓](#one-renderer-per-window)
 - **Parallel without conflicts.** Atomic locks, one git worktree and branch per ticket, and a serialized merge queue that
-  rebases, writes the board status *after* the rebase, runs the tests and only then pushes. Red tests never land.
+  rebases, runs the tests after the rebase and only then pushes. Red tests never land.
+- **A private board.** Tickets, questions and answers live in a git repository on your machine, next to the project and
+  never pushed: your remote receives only code. [Where ↓](#where-the-board-lives)
 - **Sessions wait for each other, only when they must.** Parallel is the default. A ticket created `--after T-003` cannot be
   claimed before T-003 is done, and the orchestrator is woken with `ready T-005` the moment it can start; a session that asks a
   question waits for the answer; two tickets on the same file both run, and the later one is told to rebase when the first
@@ -45,7 +48,7 @@ the ticket is done. Every ticket works in its own git worktree and lands on `mai
   the last 90 s), swap, commit charge (Windows) and CPU have room. Heavy steps (full test suites, E2E, builds, browsers) go
   through elastic, memory-capped slots — a cgroup scope on Linux, a Job Object on Windows.
 - **Questions without ping-pong.** A blocked session asks with `vixtab ticket ask`; the question lands in the ticket on
-  `main`, the orchestrator is woken up, answers once, and the session continues.
+  the board, the orchestrator is woken up, answers once, and the session continues.
 - **Clean-up you can trust.** `done` refuses to push untested code, stops processes left in the worktree (dev servers,
   browsers), and removes the worktree. Test commands always run with `pipefail`, so `… | tail` cannot hide a red test. Orphans are found later with `vixtab procs orphans`. VS Code, Claude Code, sshd and the
   desktop shell are never stopped.
@@ -79,6 +82,14 @@ the ticket is done. Every ticket works in its own git worktree and lands on `mai
 orchestrator*, whether this project can use VixTab (one-click set-up if not), the board's tickets with their status (click one
 to read it), versions, the playground, the doctor and the settings.
 
+Its **Tabs** section shows every Claude tab running on this machine, in every project, grouped by VS Code window: a summary
+(`9 tabs · 3 busy · 5 idle · 1 asking · 5 windows · RAM 92GB free · CPU 4 %`, measured by the resource gate, with whether a new
+tab can open), each window with its number of Claude tabs and its renderer load (⚠ from 90 %: that window's tabs lag), each tab
+with its state (busy, idle, asking) and for how long, its ticket's status and the model VixTab opened it on (click a ticket tab
+to read the ticket), then *Finished and closed*: the tabs VixTab opened that have closed since, newest first (last 50; *Clear*
+empties it). It refreshes every 5 s while the panel is visible, renderer load at most once a minute. Windows without the
+VixTab extension are not listed. The same in a terminal: `vixtab tabs` (`--load` for renderer load).
+
 **Is VixTab set up in a project, and which version?** Look at the panel, or run `vixtab status` inside the project (also
 *VixTab: Show status*):
 
@@ -88,7 +99,7 @@ VixTab in /home/me/my-app: YES, its Claude Code sessions can use VixTab
   extension  vixagent.vixtab v0.5.0 installed
              window 4242: v0.4.1 (this window)  /home/me/my-app  ← older than 0.5.0 — reopen that window to load the new one
   skills     scope every project; this project uses the copies for every project v0.5.0
-  board      tickets/README.md on origin/main: 7 ticket(s), 2 not done
+  board      /home/me/my-app.vixtab/board (private): 7 ticket(s), 2 not done
 ```
 
 Every installed skill file carries the version that wrote it (`<!-- vixtab-managed v0.5.0: … -->`); a VS Code window keeps the
@@ -98,11 +109,12 @@ Change the scope in *Settings ▸ VixTab: Skills Scope*, or with `vixtab skills 
 `VIXTAB_SKILLS_SCOPE` for the one-line installers). `vixtab skills status` shows where the skills are. Either way the
 orchestrator skill does not start on its own from a general word like "orchestrator": Claude asks whether you mean VixTab.
 
-The first time, the orchestrator offers to create the ticket board (`vixtab init --push`). There is no folder-trust prompt to
-click through: the repository is open in VS Code, which already trusts it (see *Security*).
+The first time, the orchestrator offers to create the ticket board (`vixtab init`): a private board next to the repository,
+with nothing committed in the project. There is no folder-trust prompt to click through: the repository is open in VS Code,
+which already trusts it (see *Security*).
 
-**Requirements:** VS Code 1.90+, the Claude Code extension (signed in), git, and a remote with a `main` branch (tickets are
-read from there; a local bare repository is fine). Linux x64/arm64 or Windows 10/11 x64.
+**Requirements:** VS Code 1.90+, the Claude Code extension (signed in), git, and a remote with a `main` branch (merges are
+rebased on it and pushed there; a local bare repository is fine). Linux x64/arm64 or Windows 10/11 x64.
 
 Terminal only? `curl -fsSL https://raw.githubusercontent.com/VixAgent/vixtab/main/install.sh | bash` (Linux) or
 `irm https://raw.githubusercontent.com/VixAgent/vixtab/main/install.ps1 | iex` (Windows PowerShell), then `vixtab doctor`.
@@ -115,7 +127,7 @@ with another, and one that must ask a question. Nothing in it can reach GitHub o
 
 | Level | What you see | Needs | Tokens |
 |---|---|---|---|
-| `vixtab playground demo board` | 4 parallel claims, an early claim (before its After ticket) refused, duplicate claim refused, overlap report, merge queue, red tests blocked, `rebase`, `ready` and `ask` events, `done` stopping a leftover process, an abandoned lock taken over — 19 checks | a terminal | none |
+| `vixtab playground demo board` | 4 parallel claims, an early claim (before its After ticket) refused, duplicate claim refused, overlap report, merge queue, red tests blocked, `rebase`, `ready` and `ask` events, `done` stopping a leftover process, an abandoned lock taken over, no board file on the project's remote — 20 checks | a terminal | none |
 | `vixtab playground demo tabs` | three labeled Claude tabs opening in new columns to the right, evened, then closed | VS Code + VixTab | none |
 | `vixtab playground demo heavy` | five heavy runs sharing two slots; a run over its memory cap is stopped | a terminal | none |
 | Open `~/vixtab-playground/project`, click **VixTab**, type *do all tickets on the board* | the real thing: an orchestrator opens a tab per ticket, they work, merge, ask, finish, and their tabs close | Claude Code signed in | a little |
@@ -185,20 +197,42 @@ too (setting `vixtab.closeEmptyTicketWindows`). `vixtab session close` finds a t
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/lifecycle-dark.svg"><img src="docs/images/lifecycle.svg" alt="Ticket lifecycle: TODO, claim, DOING, ask and answer, merge queue with tests, DONE" width="100%"></picture>
 
-The board is `tickets/README.md` on your main branch: a table with one row per ticket (`☐ TODO`, `⏳ DOING (session)`,
-`❓ ASK (session)`, `✅ DONE (session)`) plus one Markdown file per ticket. Board-only changes (new ticket, question, answer,
-release) are committed straight onto `main` with git plumbing and a temporary index — no checkout, fast even in huge
-repositories.
+The board's `README.md` is a table with one row per ticket (`☐ TODO`, `⏳ DOING (session)`, `❓ ASK (session)`,
+`✅ DONE (session)`), next to one Markdown file per ticket. Every change (new ticket, claim, question, answer, release, done) is
+one commit on the board, so its history shows who did what and when. A session writes its `## Answer` in the ticket file that
+`claim` printed; `done` commits it with ✅ DONE once the code is on `main`.
+
+## Where the board lives
+
+The board is private to your machine: `<home>/board`, where `<home>` is `<parent>/<repo>.vixtab` next to the repository (the
+folder that also holds the ticket worktrees and locks; `VIXTAB_HOME` moves it). It is a git repository with its own history,
+without a remote: it is not part of the project and is never pushed, so a public repository shows only your code. VixTab's
+settings sit next to it in `<home>/vixtab.config.json`. `vixtab board path` prints the folder; to back the board up, copy it.
+The orchestrator keeps its handover note there too (`vixtab board write HANDOVER.md --file …`).
+
+**Boards made by VixTab 0.7.0 and older** are a `tickets/` folder and a `vixtab.config.json` on your main branch, published
+with your code. They keep working, with a warning, until you move them:
+
+```bash
+vixtab board migrate --dry-run   # what would move, and where
+vixtab board migrate             # copy the board into <home>/board, then one commit on main removes tickets/ and the config
+```
+
+The migration is refused while a ticket is ⏳ DOING or ❓ ASK (`--force` overrides), and `--keep-on-main` leaves the old copy on
+`main`. Running it again changes nothing. The removed files stay in your remote's git history: whether to rewrite that history
+is your decision, and VixTab never does it.
 
 ## Parallel without conflicts
 
-<picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/merge-queue-dark.svg"><img src="docs/images/merge-queue.svg" alt="Four tickets merge through one lock: fetch, rebase, status, tests, push" width="100%"></picture>
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/merge-queue-dark.svg"><img src="docs/images/merge-queue.svg" alt="Four tickets merge through one lock: fetch, rebase, tests, push, status" width="100%"></picture>
 
 - **Claim** creates the lock `T-NNN` with `mkdir` (atomic on ext4 and NTFS): two sessions can never take the same ticket.
 - Each ticket gets a worktree `<repo>.vixtab/wt-T-NNN` on branch `vixtab/T-NNN`, and a private port in `.vixtab.env`
   (`base + ticket number`, moved by +1000 when something already listens there).
-- **Every write to `main` goes through one lock**, `merge-main`. The status cell is written after the rebase, on the newest
-  board, so tickets claimed or finished at the same moment never conflict on neighbouring rows.
+- **Every write to `main` goes through one lock**, `merge-main`: fetch, rebase, tests, push. ✅ DONE is written on the board
+  after the push, still under that lock, so the board never says done before the code is on `main`.
+- **Board edits take their own lock**, `board`, and each one commits only the files it changed, so tickets claimed or
+  finished at the same moment never conflict on neighbouring rows.
 - **Tests run after the rebase**, on exactly what will be pushed. Red ⇒ nothing is pushed.
 - Locks whose owner died (same host, pid gone) are taken over automatically, through a second lock so that two sessions cannot
   both "repair" the same lock.
@@ -217,15 +251,17 @@ cap + 4 GB. `vixtab session count` shows the gate; `vixtab watch ram` alerts the
 | Command | What it does |
 |---|---|
 | `vixtab setup` · `vixtab doctor [--brief]` | install CLI + skills · check everything, with the fix for each problem |
-| `vixtab init [--push]` | add `vixtab.config.json` and the board to a repository |
-| `vixtab ticket list` · `new "<title>" [--area …] [--after T-x] [--body-file F]` · `show <id> [--questions]` | the board |
+| `vixtab init` | create the private board and `vixtab.config.json` in `<home>`; nothing is committed in the project |
+| `vixtab board path` · `write <name> --file F` · `migrate [--dry-run] [--keep-on-main] [--force]` | the board's folder · add or replace an extra file (HANDOVER.md) · move a board made by 0.7.0 or older off `main` |
+| `vixtab ticket list` · `new "<title>" [--area …] [--after T-x] [--model <m>] [--body-file F]` · `show <id> [--questions]` | the board; `--model` writes the ticket's **Model** line |
 | `vixtab ticket ready [--json]` | tickets that can start now, and what the others wait for |
 | `vixtab ticket claim <id> --as <session> [--takeover] [--ignore-after]` | lock + worktree + branch + ⏳ DOING (refused, exit 8, while an After ticket is not done) |
 | `vixtab ticket merge <id> [-- <test command>]` | rebase, test after rebase, push |
 | `vixtab ticket done <id>` · `release <id>` | ✅ DONE + clean-up · give the ticket back |
 | `vixtab ticket ask <id> "<question>"` · `answer <id> "<answer>"` | ❓ ASK ↔ ⏳ DOING, recorded in the ticket |
 | `vixtab ticket overlap [<id>…]` | files changed by two or more active tickets |
-| `vixtab session open <label>` · `close <label> [<pid>]` · `count` · `list` | labeled Claude tabs, resource-gated |
+| `vixtab session open <label> [--model <m>]` · `close <label> [<pid>]` · `count` · `list` | labeled Claude tabs, resource-gated; `--model` (or the ticket's Model line) picks the model for that tab only |
+| `vixtab tabs [--json] [--load]` · `tabs clear` | every Claude tab of this machine by VS Code window: state and for how long, ticket status, model, renderer load (`--load`); the tabs VixTab opened that have closed |
 | `vixtab tab layout` · `even` · `join` · `open <session>` · `close <label>` · `windows` · `new-window` | low-level tab control, ticket windows |
 | `vixtab wait [--as <name>] <id>[:<pid>] …` | sleep until `done` / `ready` / `ask` / `rebase` / `gone` events (any session can use it) |
 | `vixtab heavy [--mem 6G] -- <command>` | run a heavy step through elastic, capped slots |
@@ -236,16 +272,15 @@ cap + 4 GB. `vixtab session count` shows the gate; `vixtab watch ram` alerts the
 
 ## Configuration
 
-`vixtab.config.json` at the repository root (all fields optional):
+`<home>/vixtab.config.json`, written by `vixtab init` (all fields optional). A `vixtab.config.json` at the repository root
+wins, for a team that commits one on purpose; only that one can set `"home"`, otherwise use `VIXTAB_HOME`.
 
 ```json
 {
-  "board": "tickets",
   "branch": "main",
   "remote": "origin",
   "ticketPrefix": "T-",
   "ticketDigits": 3,
-  "home": "../my-repo.vixtab",
   "test": "bun test",
   "setup": "bun install",
   "ports": { "base": 4000 },
@@ -272,6 +307,9 @@ Environment overrides: `VIXTAB_HOME`, `VIXTAB_REPO`, `VIXTAB_MAX_SESSIONS`, `VIX
 - **Labeled sessions without tokens.** `vixtab session open` runs the Claude CLI that ships with the Claude Code extension in a
   pseudo-terminal, types `/rename <label>` and `/exit`, then the extension opens that session with Claude Code's
   `claude-vscode.editor.open` command; the tab takes its label from the session title.
+- **Model per ticket.** On resume Claude Code restores the model of the session's last answer. With `--model <m>` (or a
+  `- **Model:** <m>` line in the ticket) the bootstrap CLI runs with `--model <m>` and the model answers one short prompt, so
+  the tab continues on that model. That one turn is the only cost; no settings file is written and the user's default stays.
 - **Sessions and transcripts** are found in `~/.claude/sessions` and `~/.claude/projects`.
 - **Skills** (`~/.claude/skills/vixtab-*/SKILL.md` for every project, or `<repo>/.claude/skills/…` per repository) hold the
   protocol for the orchestrator and for ticket sessions, so the assignment message stays one line. Ticket sessions start in the
@@ -304,7 +342,8 @@ Environment overrides: `VIXTAB_HOME`, `VIXTAB_REPO`, `VIXTAB_MAX_SESSIONS`, `VIX
   closed at the same moment can leave Claude Code unable to open tabs ("Webview is disposed") until the window is reloaded;
   VixTab therefore runs tab actions one at a time. See [troubleshooting](docs/troubleshooting.md).
 - Older Claude Code versions address sessions by an auto-generated name instead of the tab label; `session open` prints both.
-- Locks are per machine. Several machines can share a remote, but each machine orchestrates its own sessions.
+- Locks and the board are per machine. Several machines can share a remote, but each machine orchestrates its own sessions
+  on its own board.
 - macOS is not supported yet (most of the code is POSIX; contributions welcome).
 - VixTab is an independent project, not affiliated with or endorsed by Anthropic.
 
@@ -314,6 +353,9 @@ Environment overrides: `VIXTAB_HOME`, `VIXTAB_REPO`, `VIXTAB_MAX_SESSIONS`, `VIX
   runs nothing else. Any process of your user account can write a command file — the same trust boundary as your account.
 - `vixtab` talks to the network only through git. It never stops protected processes (VS Code, Claude Code, sshd, the
   desktop shell).
+- **What reaches your remote.** With a private board, only the code that ticket sessions merge. The board (tickets, questions, answers, who worked
+  on what) and VixTab's config stay on your machine; `vixtab board migrate` is the one command that commits to `main` on its
+  own, to remove an old board from it.
 - **Folder trust.** To create a labeled session without a model turn, VixTab briefly runs the Claude CLI (it types
   `/rename` and `/exit`). It does so only for a folder that is open in a VS Code window running VixTab — VS Code runs extensions
   only in workspaces it trusts, and the Claude Code tab there runs without its own trust prompt — and passes that CLI Claude Code's

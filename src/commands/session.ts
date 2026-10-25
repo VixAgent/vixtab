@@ -4,23 +4,30 @@ import { join } from "node:path";
 import { has, parseArgs, str } from "../core/args.ts";
 import { callerWindow, claudeTabCount, findWindow, layout, openTicketWindow, send, windowInfo, windows, windowsWithLabel } from "../core/bridge.ts";
 import { TrustNeeded, claudeVersion, createLabeledSession, liveSessionsUnder, registry } from "../core/claude.ts";
-import { type Config, loadConfig } from "../core/config.ts";
+import { isModelName, modelArg, sessionModel } from "../core/board.ts";
+import { syncBoard, ticketOnBoard } from "../core/boardstore.ts";
+import { type Config, isId, loadConfig } from "../core/config.ts";
 import { locksOf } from "../core/mainline.ts";
 import { alive } from "../core/proc.ts";
 import { measure } from "../core/resources.ts";
+import { logTab, openTabByLabel, readTabLog, ticketStatus } from "../core/tabs.ts";
 import { platform } from "../platform/index.ts";
 import { fail, native, norm, pathKey, sleep } from "../core/util.ts";
 
 export const HELP = `vixtab session — fresh, labeled Claude Code tabs in VS Code
 
-  session open <label> [--cwd DIR] [--prompt TEXT] [--focus] [--here] [--trust] [--no-gate]
+  session open <label> [--cwd DIR] [--prompt TEXT] [--model M] [--focus] [--here] [--trust] [--no-gate]
         New session whose tab is named <label>, without stealing focus (unless --focus). No model turn: no tokens. --prompt
-        pre-fills the input box (it is not sent). Where the tab goes follows "tabs" in vixtab.config.json: by default the
+        pre-fills the input box (it is not sent). --model (sonnet, opus, haiku or an id such as claude-sonnet-5-5): the tab
+        runs on that model; without it, on the Model line of the ticket <label> if it has one, else on the user's default
+        (never changed: the model is set for this session only, at the cost of one one-word turn on it; "default" forces the
+        default). Where the tab goes follows "tabs" in vixtab.config.json: by default the
         orchestrator's own window until it holds 6 Claude tabs (new columns up to 3, then stacked in the last one), then
         ticket windows (separate VS Code windows, 5 Claude tabs each; a new one only when all are full), because all tabs of
         one window share one renderer thread. --here: the caller's column. No trust prompt when the folder is open in a
         VS Code window running VixTab (VS Code trusts it); --trust answers the CLI's prompt in other cases.
         Prints: session=<uuid> name=<address> pid=<pid> label=<label> auto_name=<registry name> window=<extension host pid>
+        … model=<model or default>
         Exit codes: 2 bad label · 3 Claude CLI problem (3 + "trust" = folder not trusted: re-run with --trust after the
         user agrees) · 4 tab problem (4 + "reload needed" = Claude Code's tab state is broken: the user must reload the
         window) · 5 label already open · 6 resource gate closed (queue the ticket, retry later)
@@ -30,6 +37,7 @@ export const HELP = `vixtab session — fresh, labeled Claude Code tabs in VS Co
   session count                    sessions of this repo, the resource gate ("open: yes" or what is missing), the Claude tabs
                                    of each VS Code window and the busiest renderer thread of each local VS Code window
   session list                     live Claude sessions of this repo (pid, name, session id, cwd)
+  (every Claude tab of this machine by window, and the closed ones: vixtab tabs)
 
 Resource gate (no fixed session cap by default): free RAM − RAM reserved for sessions opened in the last 90 s ≥ minFreeRamMB,
 swap ≤ maxSwapMB, commit ≤ 85 % (Windows), CPU ≤ 85 %. Configure in vixtab.config.json "sessions" or VIXTAB_* variables.`;
@@ -44,7 +52,7 @@ function recentOpens(c: Config): Recent[] {
   }
 }
 
-async function gate(c: Config) {
+export async function gate(c: Config) {
   const n = liveSessionsUnder([c.repo, c.home]).length;
   const reserved = recentOpens(c).length * c.sessions.reserveMB;
   const g = await measure({ minFreeMB: c.sessions.minFreeRamMB, maxSwapMB: c.sessions.maxSwapMB, maxCommit: c.sessions.maxCommit, maxCpu: c.sessions.maxCpu }, reserved);
@@ -88,7 +96,7 @@ async function chooseWindow(c: Config, cwd: string, here: boolean): Promise<{ wi
 
 export async function session(argv: string[]): Promise<void> {
   const [action, ...rest] = argv;
-  const a = parseArgs(rest, ["cwd", "prompt"]);
+  const a = parseArgs(rest, ["cwd", "prompt", "model"]);
   switch (action) {
     case "count": {
       const c = loadConfig();
@@ -112,6 +120,15 @@ export async function session(argv: string[]): Promise<void> {
       const c = loadConfig();
       const cwd = norm(str(a, "cwd") ?? c.repo);
       if (!existsSync(cwd)) fail(`no such folder: ${cwd}`, 2);
+      // --model, else the Model line of the ticket named <label> (on the board), else the user's default.
+      const flag = modelArg(a);
+      let ticketText: string | null = null;
+      if (flag === undefined && isId(c, label)) {
+        syncBoard(c);
+        ticketText = ticketOnBoard(c, label)?.text ?? null;
+      }
+      const model = sessionModel(flag, ticketText);
+      if (model && !isModelName(model)) fail(`the Model line of ${label} is not a model name: ${model}`, 2);
       const L = locksOf(c);
       let release: () => void;
       try {
@@ -134,7 +151,7 @@ export async function session(argv: string[]): Promise<void> {
         let id: string;
         try {
           // The target window has the folder open and runs VixTab, so VS Code trusts it: no CLI trust prompt (see claude.ts).
-          id = await createLabeledSession(label, cwd, has(a, "trust"), { vscodeTrusted: !!info });
+          id = await createLabeledSession(label, cwd, has(a, "trust"), { vscodeTrusted: !!info, model });
         } catch (e) {
           if (e instanceof TrustNeeded)
             fail(`trust: Claude Code has not been told to trust ${native(cwd)} yet. Ask the user; if they agree, run the same command with --trust (VixTab then answers "Yes, I trust this folder" once).`, 3);
@@ -147,11 +164,12 @@ export async function session(argv: string[]): Promise<void> {
         for (let i = 0; i < 90 && !entry; i++, await sleep(500)) entry = registry().find((x) => x.sessionId === id && x.entrypoint === "claude-vscode" && alive(x.pid)) ?? null;
         if (!entry) fail(`session=${id}: the tab (window ${target.win}, column ${opened.column}) did not start its Claude process within 45 s`, 4);
         writeFileSync(recentFile(c), JSON.stringify([...recentOpens(c), { at: Date.now(), label }]));
+        logTab({ ev: "open", at: Date.now(), label, sessionId: entry.sessionId, pid: entry.pid, cwd, window: target.win, model: model ?? null });
         // SendMessage address: Claude Code 2.1.308 (checked on Windows) uses the /rename title (= label); 2.1.280 (Linux) the
         // auto-generated name. Print the one that should work as name=, and both for the fallback.
         const v = claudeVersion();
         const byLabel = !v || v[0] > 2 || (v[0] === 2 && (v[1] > 1 || v[2] >= 300));
-        console.log(`session=${entry.sessionId} name=${byLabel ? label : (entry.name ?? label)} pid=${entry.pid} label=${label} auto_name=${entry.name ?? ""} window=${target.win}${windowInfo(target.win)?.kind === "tickets" ? " (ticket window)" : ""}${target.stack ? " stacked" : ""}`);
+        console.log(`session=${entry.sessionId} name=${byLabel ? label : (entry.name ?? label)} pid=${entry.pid} label=${label} auto_name=${entry.name ?? ""} window=${target.win}${windowInfo(target.win)?.kind === "tickets" ? " (ticket window)" : ""}${target.stack ? " stacked" : ""} model=${model ?? "default"}`);
         if (target.note) console.log(target.note);
         const dup = registry().filter((x) => (x.name === label || x.name === entry.name) && x.pid !== entry.pid && alive(x.pid)).length;
         if (dup) console.log(`WARNING: another live session is also named ${label}/${entry.name}; use the [ref] shown by ListAgents`);
@@ -168,6 +186,9 @@ export async function session(argv: string[]): Promise<void> {
       if (where.length !== 1) fail(`NOT CLOSED: ${where.length ? `several windows (${where.join(", ")}) have` : "no window has"} a Claude tab labeled "${label}"`, 1);
       const r = await send("close", { label }, 240_000, where[0]);
       if (!r.closed) fail(`NOT CLOSED: ${r.matches} Claude tabs are labeled "${label}" (need exactly 1)`, 1);
+      // History for the panel (vixtab tabs): the ticket status at closing time is the final one.
+      const opened = openTabByLabel(readTabLog(), label);
+      if (opened) logTab({ ev: "close", at: Date.now(), label, sessionId: opened.sessionId, status: ticketStatus(opened.cwd, label) });
       if (!pid) return void console.log(`Closed "${label}".`);
       for (let i = 0; i < 60; i++, await sleep(500)) if (!alive(pid)) return void console.log(`Closed "${label}" (pid ${pid} exited).`);
       fail(`tab closed but pid ${pid} still runs after 30 s`, 2);

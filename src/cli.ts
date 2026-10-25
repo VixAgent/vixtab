@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 // VixTab — run many Claude Code sessions in parallel on one repository, one fresh labeled VS Code tab per ticket.
+import { board, HELP as BOARD } from "./commands/board.ts";
 import { doctor } from "./commands/doctor.ts";
 import { heavy, HELP as HEAVY } from "./commands/heavy.ts";
 import { init, HELP as INIT } from "./commands/init.ts";
@@ -11,6 +12,7 @@ import { setup, HELP as SETUP } from "./commands/setup.ts";
 import { skills, HELP as SKILLS } from "./commands/skills.ts";
 import { status, HELP as STATUS } from "./commands/status.ts";
 import { tab, HELP as TAB } from "./commands/tab.ts";
+import { tabs, HELP as TABS } from "./commands/tabs.ts";
 import { ticket, HELP as TICKET } from "./commands/ticket.ts";
 import { wait, HELP as WAIT } from "./commands/wait.ts";
 import { watch, HELP as WATCH } from "./commands/watch.ts";
@@ -26,15 +28,17 @@ Usage: vixtab <command> …      (vixtab help <command> for details)
     skills scope|install|status   where the Claude Code skills apply: every project (default) or chosen ones
     status                is VixTab set up for this project? which versions (CLI, extension, skills), board
     doctor [--brief]      check git, the board, Claude Code, the VS Code extension, skills, resources
-    init [--push]         add a ticket board (vixtab.config.json + tickets/) to this repository
+    init                  add a private ticket board (<home>/board, outside the repository, never pushed)
     playground …          a safe sandbox and scripted demos
 
   Tickets (any session)
     ticket list|new|show|ready|claim|merge|done|release|ask|answer|overlap
+    board path|write|migrate      the private board: its folder, extra files (HANDOVER.md), moving an old board off main
 
   Tabs and sessions (orchestrator)
     session open|close|count|list     fresh labeled Claude Code tabs, resource-gated
     tab layout|even|open|close|windows
+    tabs [--json] [--load] | clear    every Claude tab of this machine by window, state, ticket; the closed ones
     wait <id>[:pid] …                 sleep until a ticket is done / asks / needs a rebase / its session died
 
   Machine
@@ -47,8 +51,10 @@ Docs: https://github.com/VixAgent/vixtab`;
 
 const COMMANDS: Record<string, [(argv: string[]) => Promise<void>, string]> = {
   ticket: [ticket, TICKET],
+  board: [board, BOARD],
   session: [session, SESSION],
   tab: [tab, TAB],
+  tabs: [tabs, TABS],
   wait: [wait, WAIT],
   heavy: [heavy, HEAVY],
   watch: [watch, WATCH],

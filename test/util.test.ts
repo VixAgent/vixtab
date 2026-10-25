@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { appendFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs } from "../src/core/args.ts";
@@ -53,6 +53,24 @@ describe("locks", () => {
   });
 });
 
+describe("transcript", () => {
+  test("lastAnswer: model and end of the last assistant message; Claude Code's own error messages count as answered", async () => {
+    const { lastAnswer } = await import("../src/core/claude.ts");
+    const f = join(mkdtempSync(join(tmpdir(), "vixtab-transcript-")), "s.jsonl");
+    const line = (o: object) => JSON.stringify(o) + "\n";
+    expect(lastAnswer(f)).toBeNull();
+    writeFileSync(f, line({ type: "custom-title", customTitle: "T-1" }) + line({ type: "user", message: { content: "hi" } }));
+    expect(lastAnswer(f)).toBeNull();
+    appendFileSync(f, line({ type: "assistant", message: { model: "claude-sonnet-5-5", content: [{ type: "text", text: "rea" }], stop_reason: null } }));
+    expect(lastAnswer(f)).toEqual({ model: "claude-sonnet-5-5", text: "rea", done: false });
+    appendFileSync(f, line({ type: "assistant", message: { model: "claude-sonnet-5-5", content: [{ type: "text", text: "ready" }], stop_reason: "end_turn" } }));
+    appendFileSync(f, line({ type: "assistant", isMeta: true, message: { model: "x" } }) + line({ type: "last-prompt" }));
+    expect(lastAnswer(f)).toEqual({ model: "claude-sonnet-5-5", text: "ready", done: true });
+    appendFileSync(f, line({ type: "assistant", message: { model: "<synthetic>", content: [{ type: "text", text: "model not found" }], stop_reason: null } }));
+    expect(lastAnswer(f)).toEqual({ model: "<synthetic>", text: "model not found", done: true });
+  });
+});
+
 describe("pipefail", () => {
   test("test commands from the config run with pipefail", async () => {
     const { shellCommand } = await import("../src/core/run.ts");
@@ -64,5 +82,16 @@ describe("pipefail", () => {
     expect(withPipefail(["bash", "-c", "x"])).toEqual(["bash", "-o", "pipefail", "-c", "x"]);
     expect(withPipefail(["bun", "test"])).toEqual(["bun", "test"]);
     if (process.platform !== "win32") expect(Bun.spawnSync(withPipefail(["sh", "-c", "false | true"])).exitCode).not.toBe(0);
+  });
+  test("one quoted line after -- runs through the shell; an argv or a single word stays as it is", async () => {
+    const { commandAfterDashes, shellCommand } = await import("../src/core/run.ts");
+    const line = "bun run typecheck && bun test test/";
+    expect(commandAfterDashes([line])).toEqual(shellCommand(line));
+    for (const l of ["a || b", "a | b", "a; b", "a > f", "a < f", "bun test"]) expect(commandAfterDashes([l])).toEqual(shellCommand(l));
+    expect(commandAfterDashes(["bun", "test", "test/"])).toEqual(["bun", "test", "test/"]);
+    expect(commandAfterDashes(["make"])).toEqual(["make"]);
+    expect(commandAfterDashes([])).toEqual([]);
+    expect(Bun.spawnSync(commandAfterDashes(["false | true"])).exitCode).not.toBe(0);
+    expect(Bun.spawnSync(commandAfterDashes(["true && true"])).exitCode).toBe(0);
   });
 });

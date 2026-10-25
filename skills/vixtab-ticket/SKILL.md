@@ -16,12 +16,15 @@ Ticket and instructions: $ARGUMENTS (or the message you received). `vt` = `~/.vi
 4. **Implement.** Heavy steps (full test suite, E2E, bundler build, browser) go through `vt heavy -- <command>`, which waits for
    free resources and caps memory. One dev server and one browser at most. Commit only files you changed (`git add <files>`,
    never `git add -A`).
-5. **Merge.** `vt ticket merge <ID> -- <test command from the ticket>`. Red tests ⇒ nothing is pushed: fix and merge again.
+5. **Merge.** `vt ticket merge <ID> -- <test command from the ticket>`, as words (`-- bun test test/`) or as one quoted line
+   (`-- "bun run typecheck && bun test test/"`, run by bash with pipefail). Red tests ⇒ nothing is pushed: fix and merge again.
    Rebase conflict ⇒ resolve in the worktree, `git add <files>`, `GIT_EDITOR=true git rebase --continue`, merge again.
    A message says main changed your files ⇒ rebase now (`git fetch -q && git rebase <remote>/<branch>`) and re-run the tests.
-6. **Answer.** Replace the placeholder under `## Answer` in the ticket file (in the worktree): commits, tests run, notes, open
-   points. Commit it, then `cd` back to the repository root and run `vt ticket done <ID>`: it pushes the answer, marks ✅ DONE,
-   stops processes in the worktree and removes it (Windows cannot delete a folder that is your shell's current directory).
+6. **Answer.** Replace the placeholder under `## Answer` in the ticket file that claim printed: commits, tests run, notes, open
+   points. It is on the private board, outside the worktree: do not commit it (only when claim printed a path inside the
+   worktree, an older board kept on main, commit it there). Then `cd` back to the repository root and run `vt ticket done <ID>`:
+   it records the answer, marks ✅ DONE, stops processes in the worktree and removes it (Windows cannot delete a folder that is
+   your shell's current directory).
 7. **Stuck or unclear?** `vt ticket ask <ID> "<question>"`, then stop and wait: the answer arrives as a message. Continue from there.
    **Need another ticket's result first** (it is not on main yet)? Run `vt wait --as <ID> <other ID>` in the background, stop, and
    when it reports `done <other ID>`: `git fetch -q && git rebase <remote>/<branch>` and continue. Do not copy its code over.

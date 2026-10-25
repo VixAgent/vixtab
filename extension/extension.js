@@ -386,11 +386,15 @@ async function createPlayground() {
 // ── Side panel (Activity Bar) ──────────────────────────────────────────────────────────────────────────────────────────────
 // VixTab icon in the left Activity Bar, like Claude Code's: start an orchestrator, see whether this project can use VixTab and
 // with which versions, browse the board's tickets (click one to read it), open the playground, doctor and settings.
+// id: keeps a node's expanded/collapsed state across refreshes; collapsed: starts collapsed; context: for view/item/context menus.
 const node = (label, o = {}) => {
-  const t = new vscode.TreeItem(label, o.children ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None);
+  const state = !o.children ? vscode.TreeItemCollapsibleState.None : o.collapsed ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.Expanded;
+  const t = new vscode.TreeItem(label, state);
+  if (o.id) t.id = o.id;
   if (o.icon) t.iconPath = new vscode.ThemeIcon(o.icon, o.color ? new vscode.ThemeColor(o.color) : undefined);
   if (o.description) t.description = o.description;
   if (o.tooltip) t.tooltip = o.tooltip;
+  if (o.context) t.contextValue = o.context;
   if (o.command) t.command = { command: o.command, title: label, arguments: o.args || [] };
   t.children = o.children;
   return t;
@@ -402,15 +406,107 @@ const TICKET_ICON = [
   [/^☐/, "circle-large-outline", undefined],
 ];
 
+// Tabs: every Claude tab of this machine by VS Code window (`vixtab tabs --json`), and the tabs VixTab opened that have closed.
+const TAB_ICON = { busy: ["sync~spin", "charts.blue"], idle: ["circle-large-outline", undefined], asking: ["question", "charts.yellow"] };
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const shortStatus = (s) => s.replace(/\s*\(.*\)\s*$/, ""); // "⏳ DOING (T-006)" → "⏳ DOING"
+function duration(ms) {
+  const s = Math.max(0, Math.round(ms / 1000)), m = Math.floor(s / 60), h = Math.floor(m / 60);
+  return s < 60 ? `${s}s` : m < 60 ? `${m}m` : h < 24 ? `${h}h ${String(m % 60).padStart(2, "0")}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+const when = (t) => new Date(t).toLocaleString();
+
+function tabsSection(o, loads) {
+  if (!o || o.error) return node("Tabs", { id: "tabs", icon: "warning", color: "charts.yellow", description: "could not read", tooltip: o ? o.error : "" });
+  const s = o.summary, g = s.gate, now = Date.now();
+  const load = (w) => (loads && loads.windows[w.pid]) || w.load;
+  const busiest = (loads && loads.busiest) || s.busiestRenderer;
+  const tip = [
+    s.text,
+    g ? `Resource gate: ${g.open === null ? "no project here (RAM and CPU only)" : g.open ? "a new tab can open" : `closed — ${g.missing.join("; ")}`}` : "",
+    g ? g.line : "",
+    busiest ? `Busiest renderer: ${busiest.pct} % (pid ${busiest.pid}${busiest.window ? `, the workbench of window ${busiest.window}` : ", a webview renderer, where Claude tabs draw; VS Code does not say of which window"}). ≥ ~90 % = tabs lag.` : "Renderer load: measured at most once a minute while this panel is visible, and on Refresh.",
+    `Windows without the VixTab extension are not listed${s.unlisted ? ` (${plural(s.unlisted, "Claude tab")} there)` : ""}.`,
+  ].filter(Boolean).join("\n");
+  const tabNode = (t) => {
+    const [icon, color] = TAB_ICON[t.state] || ["circle-large-outline"];
+    const tk = t.ticket ? shortStatus(t.ticket.status) + (/^✅/.test(t.ticket.status) ? " — waiting to be closed" : "") : "";
+    const desc = [`${t.state}${t.since ? " " + duration(now - t.since) : ""}`, tk, t.model].filter(Boolean).join(" · ");
+    const tooltip = [
+      t.ticket ? `${t.ticket.id}  ${t.ticket.title}\n${t.ticket.status}` : t.label,
+      `State: ${t.state}${t.since ? ` since ${when(t.since)}` : ""}`,
+      t.model ? `Model: ${t.model}` : "",
+      `Project: ${t.repo || t.cwd}`,
+      `Session: ${t.sessionId} · pid ${t.pid}`,
+      t.openedAt ? `Opened by VixTab: ${when(t.openedAt)}` : t.startedAt ? `Started: ${when(t.startedAt)}` : "",
+      t.ticket ? "Click to read the ticket." : "",
+    ].filter(Boolean).join("\n");
+    return node(t.label, { id: `tab:${t.sessionId}`, icon, color, description: desc, tooltip, command: t.ticket ? "vixtab.showTicket" : undefined, args: t.ticket ? [t.ticket.id, t.repo] : [] });
+  };
+  const winNode = (w) => {
+    const l = load(w), hot = l && l.pct >= 90;
+    const desc = [w.kind === "tickets" ? "ticket window" : "main window", plural(w.tabs.length, "Claude tab"), l ? `renderer ${l.pct} %` : ""].filter(Boolean).join(" · ");
+    const tooltip = [w.folders.join("\n") || "(no folder)", `Extension host pid ${w.pid} · VixTab v${w.version}`, l ? `Workbench renderer (pid ${l.renderer}): busiest thread ${l.pct} %${hot ? " — this window's tabs lag" : ""}` : ""].filter(Boolean).join("\n");
+    return node(w.project, { id: `win:${w.pid}`, icon: hot ? "warning" : "window", color: hot ? "charts.yellow" : undefined, description: desc, tooltip, children: w.tabs.length ? w.tabs.map(tabNode) : undefined });
+  };
+  const closed = o.closed.map((c) =>
+    node(c.label, {
+      id: `closed:${c.sessionId}:${c.closedAt}`,
+      icon: c.status && /^✅/.test(c.status) ? "pass" : "circle-slash",
+      color: c.status && /^✅/.test(c.status) ? "testing.iconPassed" : undefined,
+      description: [c.project, `ran ${duration(c.ranMs)}`, `closed ${duration(now - c.closedAt)} ago`, c.status ? shortStatus(c.status) : ""].filter(Boolean).join(" · "),
+      tooltip: [c.label, c.status || "", `Project: ${c.cwd}`, c.model ? `Model: ${c.model}` : "", `Opened: ${when(c.openedAt)}`, `Closed: ${when(c.closedAt)}${c.how === "gone" ? " (seen gone: closed outside VixTab)" : ""}`, `Session: ${c.sessionId}`].filter(Boolean).join("\n"),
+    }),
+  );
+  return node("Tabs", {
+    id: "tabs",
+    icon: g && g.open === false ? "warning" : "layers",
+    color: g && g.open === false ? "charts.yellow" : undefined,
+    description: s.text,
+    tooltip: tip,
+    children: [
+      ...o.windows.map(winNode),
+      node("Finished and closed", { id: "closed", icon: "history", description: o.closed.length ? `${o.closed.length}` : "none yet", collapsed: true, context: "vixtab.closedTabs", tooltip: "Tabs VixTab opened that have closed, newest first (last 50)", children: closed.length ? closed : undefined }),
+    ],
+  });
+}
+
 class Panel {
   constructor() {
     this.changed = new vscode.EventEmitter();
     this.onDidChangeTreeData = this.changed.event;
     this.board = null; // { at, folder, ok, tickets, error }
+    this.tabs = null; // last `vixtab tabs --json`, or { error }
+    this.loads = null; // { at, windows: { [extension host pid]: load }, busiest } from the last `vixtab tabs --json --load`
+    this.running = {};
   }
   refresh(full) {
     if (full) this.board = null;
     this.changed.fire();
+  }
+  // A cheap read (load = false) or one that samples renderer load for a few seconds; one of each at a time.
+  async fetchTabs(load) {
+    const k = load ? "load" : "tabs";
+    if (this.running[k]) return false;
+    this.running[k] = true;
+    try {
+      const folder = ((vscode.workspace.workspaceFolders || [])[0] || {}).uri;
+      const r = await runCli(["tabs", "--json", ...(load ? ["--load"] : [])], folder ? folder.fsPath : undefined, true);
+      let o = null;
+      try {
+        o = JSON.parse(r.stdout);
+      } catch {}
+      if (o && o.summary) {
+        if (load) this.loads = { at: Date.now(), windows: Object.fromEntries(o.windows.filter((w) => w.load).map((w) => [w.pid, w.load])), busiest: o.summary.busiestRenderer };
+        if (!this.tabs || this.tabs.error || o.at >= this.tabs.at) this.tabs = o;
+      } else if (!this.tabs || this.tabs.error) this.tabs = { error: r.text.split("\n")[0] || "vixtab tabs gave no answer" };
+      return true;
+    } finally {
+      this.running[k] = false;
+    }
+  }
+  pollTabs(load) {
+    void this.fetchTabs(load).then((done) => done && this.changed.fire());
   }
   getTreeItem(e) {
     return e;
@@ -456,6 +552,8 @@ class Panel {
         );
       } else rows.push(node("Board", { icon: "checklist", description: b.ok ? "empty" : "none yet — the orchestrator creates it", tooltip: b.ok ? "" : b.error }));
     }
+    if (!this.tabs) await this.fetchTabs(false);
+    rows.push(tabsSection(this.tabs, this.loads));
     rows.push(
       node("Versions", { icon: "versions", description: `extension v${version}`, command: "vixtab.status", tooltip: "CLI, extension in each window, skills, board (vixtab status)" }),
       node("Create playground", { icon: "beaker", command: "vixtab.createPlayground", tooltip: "A sandbox with five sample tickets" }),
@@ -478,9 +576,10 @@ async function enableHere(panel) {
   panel.refresh(true);
 }
 
-async function showTicket(id) {
+// repo: the ticket's project when it is not this window's (a tab of another project in the Tabs section).
+async function showTicket(id, repo) {
   const folder = ((vscode.workspace.workspaceFolders || [])[0] || {}).uri;
-  const r = await runCli(["ticket", "show", id], folder ? folder.fsPath : undefined, true);
+  const r = await runCli(["ticket", "show", id], repo || (folder ? folder.fsPath : undefined), true);
   const doc = await vscode.workspace.openTextDocument({ language: "markdown", content: r.code === 0 ? r.stdout : `Could not read ${id}:\n\n${r.text}` });
   await vscode.window.showTextDocument(doc, { preview: true });
 }
@@ -520,10 +619,16 @@ function activate(context) {
   const panel = new Panel();
   const view = vscode.window.createTreeView("vixtab.panel", { treeDataProvider: panel });
   const tick = setInterval(() => view.visible && panel.refresh(true), 60000); // the board changes while sessions work
+  // Tabs: a cheap read every 5 s while the panel is visible; renderer load (it samples for seconds) at most once a minute.
+  const tabsTick = setInterval(() => {
+    if (!view.visible) return;
+    panel.pollTabs(false);
+    if (!panel.loads || Date.now() - panel.loads.at >= 60000) panel.pollTabs(true);
+  }, 5000);
   context.subscriptions.push(
     view,
-    { dispose: () => clearInterval(tick) },
-    view.onDidChangeVisibility((e) => e.visible && panel.refresh(false)),
+    { dispose: () => (clearInterval(tick), clearInterval(tabsTick)) },
+    view.onDidChangeVisibility((e) => e.visible && (panel.refresh(false), panel.pollTabs(false))),
     vscode.window.onDidChangeWindowState((s) => s.focused && view.visible && panel.refresh(false)),
     vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration("vixtab") && panel.refresh(false)),
     vscode.workspace.onDidChangeWorkspaceFolders(() => panel.refresh(true)),
@@ -533,7 +638,11 @@ function activate(context) {
     vscode.commands.registerCommand("vixtab.setup", () => setup(false)),
     vscode.commands.registerCommand("vixtab.doctor", doctor),
     vscode.commands.registerCommand("vixtab.status", showStatus),
-    vscode.commands.registerCommand("vixtab.refresh", () => panel.refresh(true)),
+    vscode.commands.registerCommand("vixtab.refresh", () => (panel.refresh(true), panel.pollTabs(false), panel.pollTabs(true))),
+    vscode.commands.registerCommand("vixtab.clearClosedTabs", async () => {
+      await runCli(["tabs", "clear"], undefined, true);
+      panel.pollTabs(false);
+    }),
     vscode.commands.registerCommand("vixtab.enableHere", () => enableHere(panel)),
     vscode.commands.registerCommand("vixtab.showTicket", showTicket),
     vscode.commands.registerCommand("vixtab.openSettings", () => vscode.commands.executeCommand("workbench.action.openSettings", SETTINGS)),

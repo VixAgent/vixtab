@@ -172,10 +172,13 @@ export class Sketch {
     this.text(x + 8, y + 3, label, size, { hue });
     return w;
   }
-  svg(title: string) {
+  /** background: false leaves everything outside the drawing transparent (the extension icon). */
+  svg(title: string, o: { background?: boolean } = {}) {
+    const bg = o.background ?? true;
     return (
       `<svg xmlns="http://www.w3.org/2000/svg" width="${this.w}" height="${this.h}" viewBox="0 0 ${this.w} ${this.h}" role="img">` +
-      `<title>${title}</title><rect width="${this.w}" height="${this.h}" rx="18" fill="${PALETTE[this.theme].bg}"/>` +
+      `<title>${title}</title>` +
+      (bg ? `<rect width="${this.w}" height="${this.h}" rx="18" fill="${PALETTE[this.theme].bg}"/>` : "") +
       this.parts.join("") +
       `</svg>\n`
     );
