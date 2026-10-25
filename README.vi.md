@@ -23,10 +23,12 @@ worktree git riêng và vào nhánh `main` qua hàng đợi gộp có chạy tes
 
 - **Điều phối tự động, tiết kiệm ngữ cảnh.** Phiên điều phối không tự làm phiếu. Mỗi phiếu chạy trên một phiên mới, ngữ cảnh nhỏ,
   xong thì đóng. Phiên điều phối chỉ đọc kết quả một dòng và chờ bằng tiến trình nền, nên không tốn token khi không có việc.
-- **Mỗi phiếu một tab, mỗi cửa sổ một renderer.** Nhãn tab là mã phiếu, tab mở không giật focus: 3 phiếu đầu là cột mới cạnh
-  phiên điều phối, các phiếu sau xếp chồng trong **cửa sổ phiếu** (cửa sổ VS Code riêng, tối đa 5 tab Claude), vì mọi tab của một
-  cửa sổ chạy chung một luồng renderer (đo trên máy 44 luồng: 14 cột cùng hiện làm luồng đó 102 % một lõi, mọi phiên đơ). Mở tab
-  không gọi model nên không tốn token và tab dùng model mặc định.
+- **Mỗi phiếu một tab, mỗi cửa sổ một renderer.** Nhãn tab là mã phiếu, tab mở không giật focus. Cửa sổ của phiên điều phối
+  được dùng trước, tới 6 tab Claude (3 cột, sau đó xếp chồng vào cột cuối). Chỉ khi đầy mới xếp chồng sang **cửa sổ phiếu** (cửa
+  sổ VS Code riêng, tối đa 5 tab Claude; chỉ mở cửa sổ mới khi các cửa sổ phiếu đang có đều đầy), vì mọi tab của một cửa sổ chạy
+  chung một luồng renderer (đo trên máy 44 luồng: 14 cột cùng hiện làm luồng đó 102 % một lõi, mọi phiên đơ). Cửa sổ phiếu tự
+  đóng khi hết tab. Mở tab không gọi model nên không tốn token, và không phải bấm cho phép tin cậy thư mục khi thư mục đang mở
+  trong VS Code.
 - **Song song không xung đột.** Khoá nguyên tử, mỗi phiếu một worktree và một nhánh, hàng đợi gộp tuần tự: rebase, ghi trạng thái
   **sau** rebase, chạy test, rồi mới đẩy. Test đỏ không bao giờ vào `main`.
 - **Các phiên chờ nhau theo ràng buộc, chỉ khi thật cần.** Mặc định các phiếu chạy song song, và phiên đang chờ không tốn token.

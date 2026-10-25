@@ -1,6 +1,6 @@
 {
   "name": "vixtab",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Orchestrate many Claude Code sessions in parallel on one repo: a fresh, labeled VS Code tab per ticket, conflict-free merges, context-saving orchestration.",
   "license": "MIT",
   "author": "phanthaitrung",

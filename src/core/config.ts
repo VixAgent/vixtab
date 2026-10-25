@@ -31,11 +31,13 @@ export type Config = {
   /**
    * Where ticket tabs go. Every Claude tab of ONE VS Code window runs in that window's single renderer thread: 14 visible columns
    * drove it to 102 % of a core and froze every session, and even hidden (stacked) tabs keep running — 7 of them reached 91 %.
-   *   auto    : the first `inWindowMax` ticket tabs as columns next to the orchestrator, then ticket windows
+   *   auto    : the orchestrator's own window first, until it holds `inWindowMax` Claude tabs (the orchestrator included):
+   *             new columns up to `columnsMax`, then stacked in the last column; then ticket windows, a new one only when
+   *             every existing ticket window is full
    *   windows : always ticket windows (separate VS Code windows = separate renderers), tabs stacked, `perWindowMax` each
    *   columns : always new columns in the orchestrator's window
    */
-  tabs: { mode: "auto" | "windows" | "columns"; inWindowMax: number; perWindowMax: number };
+  tabs: { mode: "auto" | "windows" | "columns"; inWindowMax: number; columnsMax: number; perWindowMax: number };
   heavy: { slots: number; memMB: number; headroomMB: number; maxCpu: number; maxCommit: number };
 };
 
@@ -101,7 +103,8 @@ export function loadConfig(cwd = process.cwd()): Config {
     },
     tabs: {
       mode: (["auto", "windows", "columns"].includes(env.VIXTAB_TAB_MODE ?? "") ? env.VIXTAB_TAB_MODE : t.mode ?? "auto") as Config["tabs"]["mode"],
-      inWindowMax: num(env.VIXTAB_TABS_IN_WINDOW, t.inWindowMax ?? 3),
+      inWindowMax: num(env.VIXTAB_TABS_IN_WINDOW, t.inWindowMax ?? 6),
+      columnsMax: num(env.VIXTAB_COLUMNS_MAX, t.columnsMax ?? 3),
       perWindowMax: num(env.VIXTAB_TABS_PER_WINDOW, t.perWindowMax ?? 5),
     },
     heavy: {

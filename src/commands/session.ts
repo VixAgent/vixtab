@@ -2,7 +2,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { has, parseArgs, str } from "../core/args.ts";
-import { callerWindow, claudeTabCount, findWindow, openTicketWindow, send, windowInfo, windows, windowsWithLabel } from "../core/bridge.ts";
+import { callerWindow, claudeTabCount, findWindow, layout, openTicketWindow, send, windowInfo, windows, windowsWithLabel } from "../core/bridge.ts";
 import { TrustNeeded, claudeVersion, createLabeledSession, liveSessionsUnder, registry } from "../core/claude.ts";
 import { type Config, loadConfig } from "../core/config.ts";
 import { locksOf } from "../core/mainline.ts";
@@ -16,8 +16,10 @@ export const HELP = `vixtab session — fresh, labeled Claude Code tabs in VS Co
   session open <label> [--cwd DIR] [--prompt TEXT] [--focus] [--here] [--trust] [--no-gate]
         New session whose tab is named <label>, without stealing focus (unless --focus). No model turn: no tokens. --prompt
         pre-fills the input box (it is not sent). Where the tab goes follows "tabs" in vixtab.config.json: by default the
-        first 3 ticket tabs are new columns next to the orchestrator, later ones are stacked in ticket windows (separate VS Code
-        windows, 5 Claude tabs each) because all tabs of one window share one renderer thread. --here: the caller's column.
+        orchestrator's own window until it holds 6 Claude tabs (new columns up to 3, then stacked in the last one), then
+        ticket windows (separate VS Code windows, 5 Claude tabs each; a new one only when all are full), because all tabs of
+        one window share one renderer thread. --here: the caller's column. No trust prompt when the folder is open in a
+        VS Code window running VixTab (VS Code trusts it); --trust answers the CLI's prompt in other cases.
         Prints: session=<uuid> name=<address> pid=<pid> label=<label> auto_name=<registry name> window=<extension host pid>
         Exit codes: 2 bad label · 3 Claude CLI problem (3 + "trust" = folder not trusted: re-run with --trust after the
         user agrees) · 4 tab problem (4 + "reload needed" = Claude Code's tab state is broken: the user must reload the
@@ -52,8 +54,9 @@ async function gate(c: Config) {
 
 /**
  * Window for a new tab. VIXTAB_EXT_HOST_PID or --here ⇒ that / the caller's window as a column. Otherwise by the tabs policy
- * (vixtab.config.json "tabs"): columns next to the orchestrator while it has fewer than inWindowMax ticket tabs (mode auto), then the
- * ticket window with the fewest Claude tabs below perWindowMax, else a new ticket window; if that cannot open, the caller's window.
+ * (vixtab.config.json "tabs"): the orchestrator's window while it holds fewer than inWindowMax Claude tabs (mode auto; columns up to
+ * columnsMax, then stacked), then the ticket window with the fewest Claude tabs below perWindowMax, else a new ticket window; if that
+ * cannot open, the caller's window.
  */
 async function chooseWindow(c: Config, cwd: string, here: boolean): Promise<{ win: number; stack: boolean; note?: string }> {
   if (process.env.VIXTAB_EXT_HOST_PID) return { win: Number(process.env.VIXTAB_EXT_HOST_PID), stack: false };
@@ -61,9 +64,14 @@ async function chooseWindow(c: Config, cwd: string, here: boolean): Promise<{ wi
   const base = caller || findWindow(cwd);
   if (here || c.tabs.mode === "columns") return { win: base, stack: false };
   const callerKind = windowInfo(base)?.kind ?? "main";
+  // The orchestrator's own window first (user's rule, 25/10/2026: a new window for a handful of tabs is waste and clutter):
+  // up to inWindowMax Claude tabs in all, new columns up to columnsMax, then stacked into the last column.
   if (c.tabs.mode === "auto" && callerKind !== "tickets") {
-    const n = await claudeTabCount(base);
-    if (n >= 0 && n - 1 < c.tabs.inWindowMax) return { win: base, stack: false }; // n - 1: the orchestrator's own tab
+    const lay = await layout(base).catch(() => null);
+    if (lay) {
+      const n = lay.flatMap((g) => g.tabs).filter((t) => t.claude).length;
+      if (n < c.tabs.inWindowMax) return { win: base, stack: lay.length >= c.tabs.columnsMax };
+    }
   }
   let best = 0, fewest = Infinity;
   for (const w of windows().filter((x) => x.kind === "tickets" && x.pid !== base && x.folders.some((f) => pathKey(f) === pathKey(cwd)))) {
@@ -125,7 +133,8 @@ export async function session(argv: string[]): Promise<void> {
           fail(`the VS Code window ${target.win} has ${info.folders.map(native).join(", ") || "no folder"} open, but Claude Code only opens sessions of the window's own folder. Open ${native(cwd)} in VS Code (code -n "${native(cwd)}") and run this there, or pass --cwd <that folder>.`, 2);
         let id: string;
         try {
-          id = await createLabeledSession(label, cwd, has(a, "trust"));
+          // The target window has the folder open and runs VixTab, so VS Code trusts it: no CLI trust prompt (see claude.ts).
+          id = await createLabeledSession(label, cwd, has(a, "trust"), { vscodeTrusted: !!info });
         } catch (e) {
           if (e instanceof TrustNeeded)
             fail(`trust: Claude Code has not been told to trust ${native(cwd)} yet. Ask the user; if they agree, run the same command with --trust (VixTab then answers "Yes, I trust this folder" once).`, 3);
@@ -142,7 +151,7 @@ export async function session(argv: string[]): Promise<void> {
         // auto-generated name. Print the one that should work as name=, and both for the fallback.
         const v = claudeVersion();
         const byLabel = !v || v[0] > 2 || (v[0] === 2 && (v[1] > 1 || v[2] >= 300));
-        console.log(`session=${entry.sessionId} name=${byLabel ? label : (entry.name ?? label)} pid=${entry.pid} label=${label} auto_name=${entry.name ?? ""} window=${target.win}${target.stack ? " (ticket window)" : ""}`);
+        console.log(`session=${entry.sessionId} name=${byLabel ? label : (entry.name ?? label)} pid=${entry.pid} label=${label} auto_name=${entry.name ?? ""} window=${target.win}${windowInfo(target.win)?.kind === "tickets" ? " (ticket window)" : ""}${target.stack ? " stacked" : ""}`);
         if (target.note) console.log(target.note);
         const dup = registry().filter((x) => (x.name === label || x.name === entry.name) && x.pid !== entry.pid && alive(x.pid)).length;
         if (dup) console.log(`WARNING: another live session is also named ${label}/${entry.name}; use the [ref] shown by ListAgents`);

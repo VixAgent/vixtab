@@ -10,7 +10,7 @@ import { type Config, loadConfig, mainRef } from "../core/config.ts";
 import { ancestors } from "../core/proc.ts";
 import { measure } from "../core/resources.ts";
 import { run } from "../core/run.ts";
-import { native } from "../core/util.ts";
+import { native, pathKey } from "../core/util.ts";
 import { platform } from "../platform/index.ts";
 import { VERSION } from "../version.ts";
 import { BIN_DIR } from "./setup.ts";
@@ -45,9 +45,12 @@ export async function doctor(argv: string[]): Promise<void> {
     } catch {
       add("FAIL", "home", `${native(probe)} is not writable`, "set \"home\" in vixtab.config.json or VIXTAB_HOME");
     }
+    // Sessions are created only for folders open in a VS Code window running VixTab (VS Code trusts them): no CLI trust prompt.
+    const inWindow = windows().some((w) => w.folders.some((f) => pathKey(f) === pathKey(c!.repo)));
     const t = folderTrusted(c.repo);
-    if (t === false) add("WARN", "trust", `Claude Code has not trusted ${native(c.repo)} yet`, "the first `vixtab session open` stops at the trust prompt; re-run it with --trust once the user agrees");
+    if (inWindow) add("OK", "trust", "open in a VS Code window running VixTab: no trust prompt needed");
     else if (t) add("OK", "trust", "Claude Code trusts this folder");
+    else add("WARN", "trust", `no VS Code window running VixTab has ${native(c.repo)} open`, "open it in VS Code (code -n <folder>); otherwise session open stops at the CLI's trust prompt unless run with --trust");
   }
 
   const bin = findClaudeBinary();

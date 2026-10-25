@@ -30,8 +30,8 @@ Linux and in Git Bash on Windows). User goal / extra instructions: $ARGUMENTS
 `vt ticket ready` lists the tickets that can start now (`ready:`) and the ones that wait (`waits: T-5 after T-3 (⏳ DOING …)`).
 For each ready ticket:
 1. `vt session open <ID>` ⇒ `session=… name=<NAME> pid=<PID> label=… auto_name=…`. Exit 6 = resource gate closed (RAM/CPU/swap): stop opening,
-   keep the rest queued, retry after the next `done` event. Exit 3 with "trust" = ask the user whether Claude Code may trust this
-   folder; if yes, re-run with `--trust`. Exit 5 = label already open. Exit 4 = tab problem: with "reload needed", stop opening
+   keep the rest queued, retry after the next `done` event. Exit 3 with "trust" (rare: only when the folder is not open in a VS Code
+   window running VixTab) = ask the user; if they agree, re-run with `--trust`. Exit 5 = label already open. Exit 4 = tab problem: with "reload needed", stop opening
    and ask the user to reload the VS Code window (that restarts every session in it, so they choose when); otherwise retry once.
 2. SendMessage to NAME, one line: `Work on ticket <ID> with the vixtab-ticket skill (board: BOARD).` If NAME is
    not reachable, try the `label=` and then the `auto_name=` value (Claude Code versions differ; ListAgents shows the right one).

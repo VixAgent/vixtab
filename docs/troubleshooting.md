@@ -7,7 +7,7 @@ Start with `vixtab doctor` inside the repository: every FAIL line comes with its
 | Exit | Meaning | What to do |
 |---|---|---|
 | 2 | bad label, or the VS Code window's folder is not the `--cwd` folder | Claude Code only opens sessions of the window's own folder: open the repository in VS Code (`code -n <repo>`) and run the orchestrator there |
-| 3 + `trust:` | Claude Code has not been told to trust the folder yet | ask the user; if they agree, run the same command with `--trust` once (VixTab then selects "Yes, I trust this folder") |
+| 3 + `trust:` | the folder is not open in a VS Code window running VixTab, so VixTab cannot rely on VS Code's trust (normally there is no prompt at all) | open the folder in VS Code; or, if the user agrees, run the same command with `--trust` (VixTab then selects "Yes, I trust this folder") |
 | 3 (other) | the Claude CLI did not start or did not save the session title | the message ends with the CLI screen; check that the Claude Code extension is installed and signed in |
 | 4 + `reload needed` | Claude Code's own tab state is broken ("Webview is disposed") | reload the VS Code window (*Developer: Reload Window*); this restarts every Claude session of that window, so the user chooses when |
 | 4 (other) | the tab did not start its Claude process, or the extension did not answer | retry once; `vixtab tab windows` lists the windows that run the extension |

@@ -45,7 +45,16 @@ function layout() {
 const claudeTabs = () => vscode.window.tabGroups.all.flatMap((g) => g.tabs.filter(isClaudeTab).map((t) => ({ t, column: g.viewColumn })));
 
 // stack: put the tab into the last group instead of a new column (ticket windows keep one group of stacked tabs).
-async function openSession({ session, prompt, focus = false, here = false, stack = false, label }) {
+let opening = 0; // > 0 while a tab is being opened: a ticket window must not close itself meanwhile
+async function openSession(args) {
+  opening++;
+  try {
+    return await openSessionNow(args);
+  } finally {
+    opening--;
+  }
+}
+async function openSessionNow({ session, prompt, focus = false, here = false, stack = false, label }) {
   if (!UUID.test(session || "")) throw new Error("session must be a UUID");
   for (let attempt = 1; ; attempt++) {
     const groups = vscode.window.tabGroups.all;
@@ -165,18 +174,30 @@ async function handle(name) {
   }
   fs.writeFileSync(`${resultFile}.tmp`, JSON.stringify(result));
   fs.renameSync(`${resultFile}.tmp`, resultFile);
-  // A ticket window whose last Claude tab just closed has done its job: remove its workspace file and close it (after the
-  // result above is written — closing the window ends this extension host).
-  if (result.ok && result.closed && isTicketWindow() && claudeTabs().length === 0 && vscode.workspace.getConfiguration("vixtab").get("closeEmptyTicketWindows", true)) {
-    setTimeout(() => {
-      if (claudeTabs().length) return;
-      log("last Claude tab closed: closing this ticket window");
+}
+
+// A ticket window that VixTab opened closes itself once it has no Claude tab left — however the tabs were closed (by VixTab,
+// by the user, by Claude Code). Only after it has held at least one Claude tab (a new window is empty for a few seconds), never
+// while VixTab is opening a tab in it (a retry briefly closes an empty conversation), and only if still empty 5 s later.
+let hadClaudeTab = false, closeTimer = null;
+function watchTicketWindow(context) {
+  if (!isTicketWindow()) return;
+  const check = () => {
+    const n = claudeTabs().length;
+    if (n > 0) hadClaudeTab = true;
+    if (closeTimer) clearTimeout(closeTimer), (closeTimer = null);
+    if (n > 0 || !hadClaudeTab || opening > 0 || !vscode.workspace.getConfiguration("vixtab").get("closeEmptyTicketWindows", true)) return;
+    closeTimer = setTimeout(() => {
+      if (claudeTabs().length || opening > 0) return;
+      log("no Claude tab left: closing this ticket window");
       try {
         fs.unlinkSync(workspaceFile());
       } catch {}
       void vscode.commands.executeCommand("workbench.action.closeWindow");
-    }, 1500);
-  }
+    }, 5000);
+  };
+  context.subscriptions.push(vscode.window.tabGroups.onDidChangeTabs(check), vscode.window.tabGroups.onDidChangeTabGroups(check), { dispose: () => closeTimer && clearTimeout(closeTimer) });
+  check();
 }
 const scan = () => {
   try {
@@ -469,6 +490,7 @@ function activate(context) {
   context.subscriptions.push(out);
   fs.mkdirSync(COMMANDS, { recursive: true });
   registerWindow(context);
+  watchTicketWindow(context);
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => registerWindow(context)));
   const w = fs.watch(COMMANDS, (_e, f) => f && void handle(String(f)));
   const poll = setInterval(scan, 2000); // fs.watch can miss events on network and remote file systems

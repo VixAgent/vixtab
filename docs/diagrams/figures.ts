@@ -78,7 +78,7 @@ export function layoutFlow(theme: Theme) {
     s.text(x, y + 300, a2, 18, { anchor: "middle" });
     s.text(x, y + 324, b2, 16, { anchor: "middle", muted: true });
   }
-  s.text(640, y + 364, "All Claude tabs of one VS Code window share one renderer thread — so after 3 columns, tickets go to ticket windows, 5 tabs each.", 16, { anchor: "middle", muted: true });
+  s.text(640, y + 364, "All Claude tabs of one VS Code window share one renderer thread: the orchestrator's window takes 6 tabs (3 columns, then stacked), then ticket windows take 5 each.", 16, { anchor: "middle", muted: true });
   return s.svg("How VixTab lays out the tabs: first tickets as columns next to the orchestrator, later ones stacked in ticket windows");
 }
 

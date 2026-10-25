@@ -32,7 +32,7 @@ the ticket is done. Every ticket works in its own git worktree and lands on `mai
   small and ends when the ticket is done; the orchestrator reads one-line results and waits on a background process, so it
   spends no tokens while nothing happens. [How it works ↓](#how-the-orchestration-saves-context)
 - **A tab per ticket, and a renderer per window.** Each tab is labeled with the ticket id and opens without stealing focus:
-  the first three as new columns next to the orchestrator, the next ones stacked in **ticket windows** — separate VS Code
+  in the orchestrator's own window first (up to 6 Claude tabs: 3 columns, then stacked), then stacked in **ticket windows** — separate VS Code
   windows, five Claude tabs each — because all tabs of one window share one renderer thread. Creating a tab runs no model turn:
   it costs no tokens and the tab uses your default model. [Why ↓](#one-renderer-per-window)
 - **Parallel without conflicts.** Atomic locks, one git worktree and branch per ticket, and a serialized merge queue that
@@ -97,8 +97,8 @@ Change the scope in *Settings ▸ VixTab: Skills Scope*, or with `vixtab skills 
 `VIXTAB_SKILLS_SCOPE` for the one-line installers). `vixtab skills status` shows where the skills are. Either way the
 orchestrator skill does not start on its own from a general word like "orchestrator": Claude asks whether you mean VixTab.
 
-The first time, the orchestrator offers to create the ticket board (`vixtab init --push`), and Claude Code asks once whether
-it may trust the folder. VixTab never answers that question without you.
+The first time, the orchestrator offers to create the ticket board (`vixtab init --push`). There is no folder-trust prompt to
+click through: the repository is open in VS Code, which already trusts it (see *Security*).
 
 **Requirements:** VS Code 1.90+, the Claude Code extension (signed in), git, and a remote with a `main` branch (tickets are
 read from there; a local bare repository is fine). Linux x64/arm64 or Windows 10/11 x64.
@@ -168,7 +168,7 @@ So VixTab spreads tabs over windows (`"tabs"` in `vixtab.config.json`):
 
 | Mode | Where a new ticket tab goes |
 |---|---|
-| `auto` (default) | a new column next to the orchestrator while it has fewer than `inWindowMax` (3) ticket tabs; then the **ticket window** with the fewest Claude tabs below `perWindowMax` (5), stacked in one group; none free ⇒ VixTab opens a new ticket window |
+| `auto` (default) | **the orchestrator's own window first**, until it holds `inWindowMax` (6) Claude tabs, the orchestrator included: new columns up to `columnsMax` (3), then stacked in the last column. Then the **ticket window** with the fewest Claude tabs below `perWindowMax` (5), stacked in one group; only when all are full does VixTab open a new ticket window |
 | `windows` | always ticket windows; the orchestrator's window keeps only the orchestrator |
 | `columns` | always new columns in the orchestrator's window (fine for a few tickets) |
 
@@ -250,7 +250,7 @@ cap + 4 GB. `vixtab session count` shows the gate; `vixtab watch ram` alerts the
   "ports": { "base": 4000 },
   "env": { "VITE_PORT": "{port}" },
   "hotFiles": ["src/types.ts"],
-  "tabs": { "mode": "auto", "inWindowMax": 3, "perWindowMax": 5 },
+  "tabs": { "mode": "auto", "inWindowMax": 6, "columnsMax": 3, "perWindowMax": 5 },
   "sessions": { "max": 0, "minFreeRamMB": 8192, "maxSwapMB": 8192, "maxCpu": 0.85, "reserveMB": 1024 },
   "heavy": { "slots": 4, "mem": "6G", "headroomMB": 4096 }
 }
@@ -312,7 +312,13 @@ Environment overrides: `VIXTAB_HOME`, `VIXTAB_REPO`, `VIXTAB_MAX_SESSIONS`, `VIX
 - The extension only accepts four actions on Claude tabs (open, close, layout, even), validates session ids and labels, and
   runs nothing else. Any process of your user account can write a command file — the same trust boundary as your account.
 - `vixtab` talks to the network only through git. It never stops protected processes (VS Code, Claude Code, sshd, the
-  desktop shell) and never answers Claude Code's folder-trust prompt unless you pass `--trust`.
+  desktop shell).
+- **Folder trust.** To create a labeled session without a model turn, VixTab briefly runs the Claude CLI (it types
+  `/rename` and `/exit`). It does so only for a folder that is open in a VS Code window running VixTab — VS Code runs extensions
+  only in workspaces it trusts, and the Claude Code tab there runs without its own trust prompt — and passes that CLI Claude Code's
+  `CLAUDE_CODE_SANDBOXED` switch so it does not stop at *Do you trust the files in this folder?*. Nothing is written to
+  `~/.claude.json`: a `claude` you start yourself in a terminal still asks. For any other folder VixTab stops and answers the
+  prompt only with `--trust`.
 - Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
 ## Development

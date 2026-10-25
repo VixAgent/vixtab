@@ -106,9 +106,15 @@ export class TrustNeeded extends Error {}
 /**
  * Create a Claude Code session with a custom title, without any model turn (so the tab later runs the default model and
  * spends no tokens): run the interactive CLI in a pseudo-terminal, type `/rename <label>`, then `/exit`.
- * The folder-trust prompt is answered only when `trust` is true (the user said so); otherwise TrustNeeded is thrown.
+ *
+ * Folder trust. `vscodeTrusted`: the folder is open in a VS Code window where the VixTab extension runs — VS Code runs
+ * extensions only in workspaces it trusts, and the Claude Code tab there runs without the CLI's own trust prompt. The
+ * bootstrap CLI then gets CLAUDE_CODE_SANDBOXED=1, Claude Code's documented switch that treats the workspace as trusted, so it
+ * does not stop at "Do you trust the files in this folder?". It only types /rename and /exit (no model turn, no tool), and the
+ * variable is not passed on: the real session runs in the VS Code tab with VS Code's environment. Nothing is persisted to
+ * ~/.claude.json. Otherwise the prompt is answered only when `trust` is true (the user said so), else TrustNeeded is thrown.
  */
-export async function createLabeledSession(label: string, cwd: string, trust: boolean): Promise<string> {
+export async function createLabeledSession(label: string, cwd: string, trust: boolean, o: { vscodeTrusted?: boolean } = {}): Promise<string> {
   const bin = findClaudeBinary() ?? fail("Claude Code CLI not found: install the Claude Code VS Code extension (or set VIXTAB_CLAUDE_BIN)", 3);
   const id = crypto.randomUUID();
   const transcript = transcriptPath(cwd, id);
@@ -117,7 +123,7 @@ export async function createLabeledSession(label: string, cwd: string, trust: bo
   const dec = new TextDecoder();
   const p: any = Bun.spawn([bin, "-n", label, "--session-id", id], {
     cwd: native(cwd),
-    env: cleanEnv(),
+    env: o.vscodeTrusted ? { ...cleanEnv(), CLAUDE_CODE_SANDBOXED: "1" } : cleanEnv(),
     terminal: {
       cols: 200,
       rows: 50,

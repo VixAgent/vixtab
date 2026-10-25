@@ -63,7 +63,7 @@ Tickets run in parallel by default. A session waits only for a real reason, and 
 
 Each tab is labeled with its ticket id and opens without stealing your focus. All Claude tabs of one VS Code window share one
 renderer thread: on a 44-thread workstation, 14 visible columns pushed it to 102 % of a core and every session froze. So the
-first three ticket tabs open as columns next to the orchestrator, and the next ones stack in **ticket windows**, separate VS Code
+orchestrator's own window is used first — up to 6 Claude tabs (3 columns, then stacked) — and only then do tabs stack in **ticket windows**, separate VS Code
 windows with five Claude tabs each. A ticket window closes itself after its last tab. `vixtab session count` shows each window,
 its tabs and its busiest renderer thread.
 

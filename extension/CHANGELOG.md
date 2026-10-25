@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0 — 2026-10-25
+
+- **No folder-trust prompt.** VixTab creates sessions only for folders open in a VS Code window where it runs — VS Code
+  runs extensions only in workspaces it trusts, and the Claude Code tab there has no trust prompt of its own. The short bootstrap
+  CLI (it only types `/rename` and `/exit`) now starts with Claude Code's `CLAUDE_CODE_SANDBOXED` switch instead of stopping at
+  *Do you trust the files in this folder?*. Nothing is written to `~/.claude.json`. `--trust` remains for other folders.
+- **The orchestrator's own window first.** A new tab goes into the orchestrator's window until it holds 6 Claude tabs (new
+  columns up to 3, then stacked in the last column); then into the ticket window with the fewest tabs (5 each); a new ticket
+  window opens only when every existing one is full. New settings `inWindowMax` (6) and `columnsMax` (3) in `"tabs"`.
+- **Ticket windows close themselves** as soon as they hold no Claude tab, however the tabs were closed (by VixTab, by hand, by
+  Claude Code), 5 s later, never while a tab is being opened in them.
+- `vixtab doctor` reports folder trust from VS Code instead of warning about the CLI prompt.
+
 ## 0.5.1 — 2026-10-24
 
 - Ticket windows say which project opened them: the title is `[<project>] VixTab tickets N — …` and the workspace file
