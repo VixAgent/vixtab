@@ -8,6 +8,10 @@ import { alive, ancestors } from "./proc.ts";
 import { run } from "./run.ts";
 import { HOME, IS_WIN, fail, isInside, pathKey, sleep } from "./util.ts";
 
+/** The extension's Marketplace ID. Up to 0.6.0 it was LEGACY_EXTENSION_ID; setup and the extension itself remove that one. */
+export const EXTENSION_ID = "vixagent.vixtab";
+export const LEGACY_EXTENSION_ID = "phanthaitrung.vixtab";
+
 export const CACHE = join(HOME, ".cache", "vixtab");
 export const COMMANDS = join(CACHE, "commands");
 export const WINDOWS = join(CACHE, "windows");

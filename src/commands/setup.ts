@@ -3,7 +3,8 @@
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { has, parseArgs, str } from "../core/args.ts";
-import { runInherit } from "../core/run.ts";
+import { LEGACY_EXTENSION_ID } from "../core/bridge.ts";
+import { run, runInherit } from "../core/run.ts";
 import { isCompiled, selfArgv } from "../core/self.ts";
 import { applyScope, currentScope, parseScope } from "../core/skills.ts";
 import { HOME, IS_WIN, fail, native, pathKey } from "../core/util.ts";
@@ -21,7 +22,8 @@ Without --bin/--path/--extension: all of --bin --path, and the skills for the sc
                    (also: vixtab skills scope, VIXTAB_SKILLS_SCOPE for the installers).
   --bin            copy this program to ${native(BIN_DIR)} (the path the skills call)
   --path           add that folder to the user PATH (Linux: ~/.local/bin/vixtab link)
-  --extension      install the VS Code extension from a .vsix with \`code --install-extension\``;
+  --extension      install the VS Code extension from a .vsix with \`code --install-extension\` (and remove ${LEGACY_EXTENSION_ID},
+                   its ID up to 0.6.0)`;
 
 export function installBin(): string {
   mkdirSync(BIN_DIR, { recursive: true });
@@ -63,6 +65,13 @@ export async function setup(argv: string[]): Promise<void> {
     if (!existsSync(vsix)) fail(`no such file: ${vsix}`, 2);
     const code = Bun.which("code") ?? fail("the `code` command is not on PATH (VS Code: Command Palette ▸ Shell Command: Install 'code' command)", 2);
     process.exitCode = await runInherit([code, "--install-extension", vsix, "--force"]);
+    // Up to 0.6.0 the extension's ID was phanthaitrung.vixtab: left installed, both copies would run in every window. The new
+    // extension, started at once in the open windows, removes it too, often first.
+    const listed = () => run([code, "--list-extensions"]).out.split(/\r?\n/).map((l) => l.trim().toLowerCase());
+    if (process.exitCode === 0 && listed().includes(LEGACY_EXTENSION_ID)) {
+      run([code, "--uninstall-extension", LEGACY_EXTENSION_ID]);
+      console.log(listed().includes(LEGACY_EXTENSION_ID) ? `could not remove ${LEGACY_EXTENSION_ID}: run code --uninstall-extension ${LEGACY_EXTENSION_ID}` : `removed ${LEGACY_EXTENSION_ID} (VixTab's extension ID up to 0.6.0); open VS Code windows switch when reloaded`);
+    }
   }
   console.log("Next: open a repository in VS Code and click 'VixTab' in the status bar.");
 }

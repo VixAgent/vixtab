@@ -57,10 +57,11 @@ the ticket is done. Every ticket works in its own git worktree and lands on `mai
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/install-dark.svg"><img src="docs/images/install.svg" alt="Install VixTab, click Set up, click VixTab in the status bar and type the goal" width="100%"></picture>
 
-1. **Install the extension.** In VS Code: Extensions ▸ search **VixTab** (`phanthaitrung.vixtab`). Or download the
+1. **Install the extension.** In VS Code: Extensions ▸ search **VixTab** (`vixagent.vixtab`). Or download the
    `.vsix` for your platform from [Releases](https://github.com/VixAgent/vixtab/releases) and run
    `code --install-extension vixtab-linux-x64.vsix` (or `vixtab-win32-x64.vsix`). The Claude Code extension is installed
-   with it if you do not have it yet.
+   with it if you do not have it yet. Up to 0.6.0 the extension was `phanthaitrung.vixtab`; the new one removes it and asks
+   you to reload each window that still runs it.
 2. **Choose where VixTab applies** in the setup notification: **every project** (the default) or **only the projects you
    choose**. Setup copies the `vixtab` program to `~/.vixtab/bin`, puts it on your PATH and installs the two Claude Code skills
    `vixtab-orchestrate` and `vixtab-ticket` accordingly.
@@ -84,7 +85,7 @@ to read it), versions, the playground, the doctor and the settings.
 ```
 VixTab in /home/me/my-app: YES, its Claude Code sessions can use VixTab
   CLI        v0.5.0 (~/.vixtab/bin/vixtab)
-  extension  v0.5.0 installed
+  extension  vixagent.vixtab v0.5.0 installed
              window 4242: v0.4.1 (this window)  /home/me/my-app  ← older than 0.5.0 — reopen that window to load the new one
   skills     scope every project; this project uses the copies for every project v0.5.0
   board      tickets/README.md on origin/main: 7 ticket(s), 2 not done

@@ -3,7 +3,7 @@ import { accessSync, constants, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { has, parseArgs } from "../core/args.ts";
 import { fetchMain, showMain } from "../core/board.ts";
-import { WINDOWS, windows } from "../core/bridge.ts";
+import { EXTENSION_ID, LEGACY_EXTENSION_ID, WINDOWS, windows } from "../core/bridge.ts";
 import { findClaudeBinary, folderTrusted, sessionsDir } from "../core/claude.ts";
 import { currentScope, globalSkillsDir, projectSkillsDir, skillsStatus } from "../core/skills.ts";
 import { type Config, loadConfig, mainRef } from "../core/config.ts";
@@ -14,6 +14,7 @@ import { native, pathKey } from "../core/util.ts";
 import { platform } from "../platform/index.ts";
 import { VERSION } from "../version.ts";
 import { BIN_DIR } from "./setup.ts";
+import { installedExtensionVersions } from "./status.ts";
 
 type Check = { status: "OK" | "WARN" | "FAIL"; name: string; detail: string; fix?: string };
 
@@ -68,6 +69,8 @@ export async function doctor(argv: string[]): Promise<void> {
     const inside = process.env.VIXTAB_EXT_HOST_PID ?? ancestors(process.pid, platform.processes()).find((p) => pids.has(p));
     add(inside ? "OK" : "WARN", "extension", `${ws.length} window(s): ${ws.map((w) => `${w.pid} v${w.version}`).join(", ")}${inside ? `; this process runs in window ${inside}` : ""}`, inside ? undefined : "run inside a Claude Code session or terminal of VS Code, or set VIXTAB_EXT_HOST_PID");
   }
+  const legacy = installedExtensionVersions(LEGACY_EXTENSION_ID);
+  if (legacy.length) add("WARN", "extension", `${LEGACY_EXTENSION_ID} v${legacy[0]} (VixTab's ID up to 0.6.0) is still installed; the extension is now ${EXTENSION_ID}`, `code --uninstall-extension ${LEGACY_EXTENSION_ID}`);
 
   // Skills follow the scope: every project (~/.claude/skills) or only the orchestrated repositories (<repo>/.claude/skills).
   const scope = currentScope();

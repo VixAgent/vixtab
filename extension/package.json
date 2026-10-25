@@ -1,9 +1,9 @@
 {
   "name": "vixtab",
-  "publisher": "phanthaitrung",
+  "publisher": "vixagent",
   "displayName": "VixTab — parallel Claude Code tabs",
   "description": "Orchestrate many Claude Code sessions on one repo: one fresh, labeled tab per ticket in its own column, conflict-free merges, context-saving orchestration.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "license": "MIT",
   "icon": "icon.png",
   "author": "phanthaitrung",

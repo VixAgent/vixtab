@@ -54,8 +54,9 @@ worktree git riêng và vào nhánh `main` qua hàng đợi gộp có chạy tes
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/install-dark.svg"><img src="docs/images/install.svg" alt="Cài VixTab, bấm Set up, bấm VixTab trên thanh trạng thái rồi gõ mục tiêu" width="100%"></picture>
 
-1. **Cài extension:** trong VS Code tìm **VixTab** (`phanthaitrung.vixtab`), hoặc tải tệp `.vsix` theo hệ điều hành ở trang
-   [Releases](https://github.com/VixAgent/vixtab/releases). Extension Claude Code được cài kèm nếu máy chưa có.
+1. **Cài extension:** trong VS Code tìm **VixTab** (`vixagent.vixtab`), hoặc tải tệp `.vsix` theo hệ điều hành ở trang
+   [Releases](https://github.com/VixAgent/vixtab/releases). Extension Claude Code được cài kèm nếu máy chưa có. Tới bản 0.6.0,
+   extension mang mã `phanthaitrung.vixtab`; bản mới tự gỡ bản cũ và nhắc tải lại những cửa sổ còn chạy bản cũ.
 2. **Chọn phạm vi** ở thông báo cài đặt: **mọi dự án** (mặc định, phiên Claude Code nào trên máy cũng dùng được VixTab) hoặc
    **chỉ dự án được chọn** (chỉ repo nào bạn bấm VixTab mới có). Bước này chép chương trình `vixtab` vào `~/.vixtab/bin`, thêm
    vào PATH và cài 2 skill Claude Code `vixtab-orchestrate`, `vixtab-ticket` theo phạm vi đã chọn.
@@ -74,8 +75,8 @@ Phạm vi được lưu lại, nâng cấp không làm đổi. Đổi trong *Set
 `vixtab skills scope global|project`. Ở cả hai phạm vi, skill điều phối không tự chạy chỉ vì gặp một từ chung chung như "điều phối":
 Claude sẽ hỏi bạn có muốn dùng VixTab không.
 
-Lần đầu, phiên điều phối đề nghị tạo bảng phiếu (`vixtab init --push`), và Claude Code hỏi một lần có tin cậy thư mục hay không.
-VixTab không bao giờ tự trả lời câu hỏi đó thay bạn.
+Lần đầu, phiên điều phối đề nghị tạo bảng phiếu (`vixtab init --push`). Không phải bấm cho phép tin cậy thư mục: repo đang mở
+trong VS Code, và VS Code đã tin cậy nó.
 
 **Cần có:** VS Code 1.90 trở lên, extension Claude Code đã đăng nhập, git, một remote có nhánh `main` (repo trần cục bộ cũng
 được). Linux x64/arm64 hoặc Windows 10/11 x64.

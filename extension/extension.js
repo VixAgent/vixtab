@@ -16,6 +16,8 @@ const WINDOW_FILE = path.join(WINDOWS, `${process.pid}.json`);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EXE = process.platform === "win32" ? ".exe" : "";
 const INSTALLED = path.join(os.homedir(), ".vixtab", "bin", `vixtab${EXE}`);
+const SETTINGS = "@ext:vixagent.vixtab";
+const LEGACY_ID = "phanthaitrung.vixtab"; // this extension's ID up to 0.6.0
 
 let out;
 const LOGS = path.join(CACHE, "logs");
@@ -458,7 +460,7 @@ class Panel {
       node("Versions", { icon: "versions", description: `extension v${version}`, command: "vixtab.status", tooltip: "CLI, extension in each window, skills, board (vixtab status)" }),
       node("Create playground", { icon: "beaker", command: "vixtab.createPlayground", tooltip: "A sandbox with five sample tickets" }),
       node("Run doctor", { icon: "pulse", command: "vixtab.doctor" }),
-      node("Settings", { icon: "gear", description: scope() === "global" ? "skills: every project" : "skills: chosen projects", command: "workbench.action.openSettings", args: ["@ext:phanthaitrung.vixtab"] }),
+      node("Settings", { icon: "gear", description: scope() === "global" ? "skills: every project" : "skills: chosen projects", command: "workbench.action.openSettings", args: [SETTINGS] }),
     );
     return rows;
   }
@@ -484,10 +486,28 @@ async function showTicket(id) {
 }
 
 // ── Activation ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// The old phanthaitrung.vixtab in the same window would register the same commands and answer the same bridge files: remove
+// it, and leave the window to it until it is reloaded.
+async function retireLegacy() {
+  try {
+    await vscode.commands.executeCommand("workbench.extensions.uninstallExtension", LEGACY_ID);
+  } catch (e) {
+    log(`could not uninstall ${LEGACY_ID}: ${e && e.message ? e.message : e}`); // another window did it already, or VS Code refused
+  }
+  const reload = "Reload Window";
+  const a = await vscode.window.showInformationMessage(`VixTab is now vixagent.vixtab: the old extension (${LEGACY_ID}) has been removed. Reload this window to switch to the new one.`, reload);
+  if (a === reload) await vscode.commands.executeCommand("workbench.action.reloadWindow");
+}
+
 function activate(context) {
-  ctx = context;
   out = vscode.window.createOutputChannel("VixTab");
   context.subscriptions.push(out);
+  if (vscode.extensions.getExtension(LEGACY_ID)) {
+    log(`${LEGACY_ID} is still loaded in window ${process.pid}: removing it, inactive until the window is reloaded`);
+    void retireLegacy();
+    return;
+  }
+  ctx = context;
   fs.mkdirSync(COMMANDS, { recursive: true });
   registerWindow(context);
   watchTicketWindow(context);
@@ -516,7 +536,7 @@ function activate(context) {
     vscode.commands.registerCommand("vixtab.refresh", () => panel.refresh(true)),
     vscode.commands.registerCommand("vixtab.enableHere", () => enableHere(panel)),
     vscode.commands.registerCommand("vixtab.showTicket", showTicket),
-    vscode.commands.registerCommand("vixtab.openSettings", () => vscode.commands.executeCommand("workbench.action.openSettings", "@ext:phanthaitrung.vixtab")),
+    vscode.commands.registerCommand("vixtab.openSettings", () => vscode.commands.executeCommand("workbench.action.openSettings", SETTINGS)),
     vscode.commands.registerCommand("vixtab.createPlayground", createPlayground),
     vscode.commands.registerCommand("vixtab.evenColumns", () => vscode.commands.executeCommand("workbench.action.evenEditorWidths")),
   );
@@ -564,6 +584,7 @@ function activate(context) {
 }
 
 function deactivate() {
+  if (!ctx) return; // stayed inactive (retireLegacy): the window file is the old extension's
   try {
     fs.unlinkSync(WINDOW_FILE);
   } catch {}

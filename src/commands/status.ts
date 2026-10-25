@@ -1,13 +1,13 @@
 // vixtab status — is VixTab set up for this project, and which versions: the CLI, the VS Code extension (installed, and what
 // each open window runs), the Claude Code skills this project's sessions see, and the ticket board.
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { has, parseArgs } from "../core/args.ts";
 import { fetchMain, parseRows, showMain } from "../core/board.ts";
-import { callerWindow, windows } from "../core/bridge.ts";
+import { EXTENSION_ID, LEGACY_EXTENSION_ID, callerWindow, windows } from "../core/bridge.ts";
 import { type Config, findRepo, loadConfig, mainRef } from "../core/config.ts";
 import { currentScope, globalSkillsDir, projectSkillsDir, savedScope, skillsStatus, type SkillState } from "../core/skills.ts";
-import { native } from "../core/util.ts";
+import { escapeRe, native } from "../core/util.ts";
 import { platform } from "../platform/index.ts";
 import { VERSION } from "../version.ts";
 import { BIN_DIR } from "./setup.ts";
@@ -25,14 +25,28 @@ const cmp = (a: string, b: string) => {
   return 0;
 };
 
-/** Versions of phanthaitrung.vixtab found in the VS Code extension folders (local and Remote SSH), newest first. */
-export function installedExtensionVersions(): string[] {
+/**
+ * Versions of an extension installed in the VS Code extension folders (local and Remote SSH), newest first. Read from each
+ * folder's extensions.json, VS Code's own list: the folders of uninstalled or replaced versions stay on disk until a restart.
+ * Older VS Code without that file: the folder names, minus those marked in .obsolete.
+ */
+export function installedExtensionVersions(id = EXTENSION_ID): string[] {
   const found = new Set<string>();
+  const folder = new RegExp(`^${escapeRe(id)}-(\\d+\\.\\d+\\.\\d+)`, "i");
   for (const root of platform.vscodeExtensionRoots()) {
     if (!existsSync(root)) continue;
+    try {
+      const list = JSON.parse(readFileSync(join(root, "extensions.json"), "utf8")) as { identifier?: { id?: string }; version?: string }[];
+      for (const e of list) if (e.identifier?.id?.toLowerCase() === id && e.version) found.add(e.version);
+      continue;
+    } catch {}
+    let obsolete: Record<string, unknown> = {};
+    try {
+      obsolete = JSON.parse(readFileSync(join(root, ".obsolete"), "utf8"));
+    } catch {}
     for (const d of readdirSync(root)) {
-      const m = /^phanthaitrung\.vixtab-(\d+\.\d+\.\d+)/.exec(d);
-      if (m) found.add(m[1]);
+      const m = folder.exec(d);
+      if (m && !obsolete[d]) found.add(m[1]);
     }
   }
   return [...found].sort((a, b) => cmp(b, a));
@@ -81,6 +95,7 @@ export async function status(argv: string[]): Promise<void> {
   }
   const cli = installedCliVersion();
   const ext = installedExtensionVersions();
+  const legacy = installedExtensionVersions(LEGACY_EXTENSION_ID);
   const me = callerWindow();
   const wins = windows();
 
@@ -88,7 +103,12 @@ export async function status(argv: string[]): Promise<void> {
     project: repo,
     enabled: !!skillsHere,
     cli: { thisProgram: VERSION, installed: cli, path: native(join(BIN_DIR, `vixtab${platform.exeSuffix}`)) },
-    extension: { installed: ext[0] ?? null, windows: wins.map((w) => ({ pid: w.pid, version: w.version, folders: w.folders, thisWindow: w.pid === me })) },
+    extension: {
+      id: EXTENSION_ID,
+      installed: ext[0] ?? null,
+      legacy: legacy.length ? { id: LEGACY_EXTENSION_ID, installed: legacy[0] } : null,
+      windows: wins.map((w) => ({ pid: w.pid, version: w.version, folders: w.folders, thisWindow: w.pid === me })),
+    },
     skills: { scope, scopeSaved: !!savedScope(), seenBy: skillsHere, version: usedVersion, global: describe(global), project: repo ? describe(project) : null },
     board,
   };
@@ -102,7 +122,8 @@ export async function status(argv: string[]): Promise<void> {
       : `${native(process.cwd())} is not a git repository: ${skillsHere ? "Claude Code sessions here see the VixTab skills (every project), but a ticket board needs a git repository" : "VixTab needs a git repository"}.`,
   );
   console.log(`  CLI        ${cli ? `v${cli}` : "not installed"} (${out.cli.path})${old(cli)}${cli !== VERSION ? `; this program v${VERSION}` : ""}`);
-  console.log(`  extension  ${ext.length ? `v${ext[0]} installed` : "not installed"}${ext.length > 1 ? ` (also ${ext.slice(1).map((v) => `v${v}`).join(", ")})` : ""}${old(ext[0])}`);
+  console.log(`  extension  ${EXTENSION_ID} ${ext.length ? `v${ext[0]} installed` : "not installed"}${ext.length > 1 ? ` (also ${ext.slice(1).map((v) => `v${v}`).join(", ")})` : ""}${old(ext[0])}`);
+  if (legacy.length) console.log(`             ${LEGACY_EXTENSION_ID} v${legacy[0]} still installed (VixTab's ID up to 0.6.0) — remove it: code --uninstall-extension ${LEGACY_EXTENSION_ID}`);
   for (const w of wins) console.log(`             window ${w.pid}: v${w.version}${w.pid === me ? " (this window)" : ""}  ${w.folders.map(native).join(", ")}${old(w.version) ? `${old(w.version)} — reopen that window to load the new one` : ""}`);
   console.log(`  skills     scope ${scope === "global" ? "every project" : "only chosen projects"}${savedScope() ? "" : " (default)"}; this project uses ${skillsHere === "project" ? "its own copies" : skillsHere === "global" ? "the copies for every project" : "none"}${usedVersion ? ` v${usedVersion}` : ""}${old(usedVersion)}`);
   console.log(`             every project (${native(globalSkillsDir())}): ${describe(global)}`);

@@ -114,7 +114,8 @@ its tabs and its busiest renderer thread.
 ## Requirements
 
 VS Code 1.90+, the Claude Code extension (signed in), git, and a remote with a `main` branch (a local bare repository is fine).
-Linux x64/arm64 or Windows 10/11 x64, also with VS Code Remote SSH.
+Linux x64/arm64 or Windows 10/11 x64, also with VS Code Remote SSH. Up to 0.6.0 this extension was `phanthaitrung.vixtab`;
+this one removes it.
 
 VixTab uses Claude Code internals that are not public APIs (checked with Claude Code 2.1.280 to 2.1.310); a Claude Code
 update can break them, and `vixtab doctor` checks what it can. Independent project, not affiliated with Anthropic.

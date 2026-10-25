@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0 — 2026-10-25
+
+- **The extension is now `vixagent.vixtab`** (VixAgent brand), in the Marketplace and in *Settings ▸ Extensions*
+  (`@ext:vixagent.vixtab`). Up to 0.6.0 it was `phanthaitrung.vixtab`. VS Code sees a new extension, so the old one is removed:
+  `vixtab setup --extension` (and the one-line installers) uninstall it; in a window that still runs it, the new one removes it,
+  stays inactive and offers *Reload Window*, so the two never answer the same commands. Settings (`vixtab.*`) are kept.
+- `vixtab status` and `vixtab doctor` name the extension and warn while `phanthaitrung.vixtab` is still installed. Installed
+  versions are read from VS Code's own list (`extensions.json`), not from folders VS Code leaves behind until a restart.
+
 ## 0.6.0 — 2026-10-25
 
 - **No folder-trust prompt.** VixTab creates sessions only for folders open in a VS Code window where it runs — VS Code
