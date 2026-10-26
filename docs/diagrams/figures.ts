@@ -78,7 +78,7 @@ export function layoutFlow(theme: Theme) {
     s.text(x, y + 300, a2, 18, { anchor: "middle" });
     s.text(x, y + 324, b2, 16, { anchor: "middle", muted: true });
   }
-  s.text(640, y + 364, "All Claude tabs of one VS Code window share one renderer thread: the orchestrator's window takes 6 tabs (3 columns, then stacked), then ticket windows take 5 each.", 16, { anchor: "middle", muted: true });
+  s.text(640, y + 364, "All Claude tabs of one VS Code window share one renderer thread: the orchestrator's window takes 6 tabs (3 columns, then stacked), then ticket windows take 6 each (setting: Max Tabs Per Window).", 16, { anchor: "middle", muted: true });
   return s.svg("How VixTab lays out the tabs: first tickets as columns next to the orchestrator, later ones stacked in ticket windows");
 }
 
@@ -90,7 +90,7 @@ export function hero(theme: Theme) {
     { label: "T-001", hue: "blue", status: ["DOING", "blue"] },
     { label: "T-002", hue: "orange", status: ["DOING", "orange"] },
     { label: "T-003", hue: "green", status: ["DONE", "green"], done: true },
-    { label: "T-004 …", hue: "gray", ghost: true, lines: ["next tickets go to", "a ticket window:", "own renderer,", "5 tabs each"] },
+    { label: "T-004 …", hue: "gray", ghost: true, lines: ["next tickets go to", "a ticket window:", "own renderer,", "6 tabs each"] },
   ], { title: "VS Code — your-repo" });
   const notes: [number, number, string, string][] = [
     [330, 475, "fresh session, own column,", "own git worktree and branch"],

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.1 — 2026-10-26
+
+- **Max tabs per window, in the settings.** New setting *VixTab: Max Tabs Per Window* (`vixtab.maxTabsPerWindow`, default
+  6): the most Claude tabs VixTab opens in one VS Code window, the orchestrator's tab included. Ticket windows now take 6
+  tabs too (they took 5). Each time a tab opens, VixTab counts the Claude tabs every window holds at that moment, so closed
+  tabs free their place and tabs you opened yourself count; the chosen window counts once more right before opening, and
+  VixTab chooses again if it filled up in between. A full window is never used: in `columns` mode, with
+  `VIXTAB_EXT_HOST_PID`, or when no ticket window can open, `session open` exits 6 (queue the ticket) instead of adding a
+  column. *Start orchestrator* (`--here`) ignores the cap. `"tabs"` `inWindowMax` / `perWindowMax` in `vixtab.config.json`
+  still override the setting for one project. `vixtab session count` prints `claude_tabs=<n>/<cap>` for each window.
+
 ## 0.8.0 — 2026-10-25
 
 - **Model per ticket.** `vixtab ticket new … --model <m>` writes a `- **Model:** <m>` line, and `vixtab session open <ID>

@@ -36,9 +36,10 @@ export type Config = {
    *             new columns up to `columnsMax`, then stacked in the last column; then ticket windows, a new one only when
    *             every existing ticket window is full
    *   windows : always ticket windows (separate VS Code windows = separate renderers), tabs stacked, `perWindowMax` each
-   *   columns : always new columns in the orchestrator's window
+   *   columns : always new columns in the orchestrator's window, up to `inWindowMax`
+   * `inWindowMax` and `perWindowMax` are per-project overrides; null = each window's own setting vixtab.maxTabsPerWindow (6).
    */
-  tabs: { mode: "auto" | "windows" | "columns"; inWindowMax: number; columnsMax: number; perWindowMax: number };
+  tabs: { mode: "auto" | "windows" | "columns"; inWindowMax: number | null; columnsMax: number; perWindowMax: number | null };
   heavy: { slots: number; memMB: number; headroomMB: number; maxCpu: number; maxCommit: number };
 };
 
@@ -86,6 +87,11 @@ export function loadConfig(cwd = process.cwd()): Config {
   const homeRaw = env.VIXTAB_HOME ?? (file === inRepo ? raw.home : undefined);
   const home = norm(longPath(homeRaw ? (isAbsolute(homeRaw) ? homeRaw : resolve(repo, homeRaw)) : defaultHome(repo)));
   const num = (v: string | undefined, d: number) => (v !== undefined && v !== "" && !Number.isNaN(Number(v)) ? Number(v) : d);
+  // Unset (or not a positive number) = null: the caller falls back to something outside the config.
+  const optNum = (v: string | undefined, d: unknown) => {
+    const x = num(v, typeof d === "number" ? d : NaN);
+    return x > 0 ? x : null;
+  };
   return {
     repo,
     configFile,
@@ -113,9 +119,9 @@ export function loadConfig(cwd = process.cwd()): Config {
     },
     tabs: {
       mode: (["auto", "windows", "columns"].includes(env.VIXTAB_TAB_MODE ?? "") ? env.VIXTAB_TAB_MODE : t.mode ?? "auto") as Config["tabs"]["mode"],
-      inWindowMax: num(env.VIXTAB_TABS_IN_WINDOW, t.inWindowMax ?? 6),
+      inWindowMax: optNum(env.VIXTAB_TABS_IN_WINDOW, t.inWindowMax),
       columnsMax: num(env.VIXTAB_COLUMNS_MAX, t.columnsMax ?? 3),
-      perWindowMax: num(env.VIXTAB_TABS_PER_WINDOW, t.perWindowMax ?? 5),
+      perWindowMax: optNum(env.VIXTAB_TABS_PER_WINDOW, t.perWindowMax),
     },
     heavy: {
       slots: num(env.VIXTAB_HEAVY_SLOTS, h.slots ?? Math.max(2, Math.floor(cpus().length / 4))),

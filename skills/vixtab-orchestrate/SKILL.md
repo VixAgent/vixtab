@@ -37,7 +37,7 @@ Linux and in Git Bash on Windows). User goal / extra instructions: $ARGUMENTS
 ## 2. Dispatch
 `vt ticket ready` lists the tickets that can start now (`ready:`) and the ones that wait (`waits: T-5 after T-3 (⏳ DOING …)`).
 For each ready ticket:
-1. `vt session open <ID>` ⇒ `session=… name=<NAME> pid=<PID> label=… auto_name=… model=…` (the ticket's Model line, or `default`). Exit 6 = resource gate closed (RAM/CPU/swap): stop opening,
+1. `vt session open <ID>` ⇒ `session=… name=<NAME> pid=<PID> label=… auto_name=… model=…` (the ticket's Model line, or `default`). Exit 6 = resource gate closed (RAM/CPU/swap) or every window full (`max` per window: the user's setting): stop opening,
    keep the rest queued, retry after the next `done` event. Exit 3 with "trust" (rare: only when the folder is not open in a VS Code
    window running VixTab) = ask the user; if they agree, re-run with `--trust`. Exit 5 = label already open. Exit 4 = tab problem: with "reload needed", stop opening
    and ask the user to reload the VS Code window (that restarts every session in it, so they choose when); otherwise retry once.

@@ -25,7 +25,9 @@ worktree git riêng và vào nhánh `main` qua hàng đợi gộp có chạy tes
   xong thì đóng. Phiên điều phối chỉ đọc kết quả một dòng và chờ bằng tiến trình nền, nên không tốn token khi không có việc.
 - **Mỗi phiếu một tab, mỗi cửa sổ một renderer.** Nhãn tab là mã phiếu, tab mở không giật focus. Cửa sổ của phiên điều phối
   được dùng trước, tới 6 tab Claude (3 cột, sau đó xếp chồng vào cột cuối). Chỉ khi đầy mới xếp chồng sang **cửa sổ phiếu** (cửa
-  sổ VS Code riêng, tối đa 5 tab Claude; chỉ mở cửa sổ mới khi các cửa sổ phiếu đang có đều đầy), vì mọi tab của một cửa sổ chạy
+  sổ VS Code riêng, tối đa 6 tab Claude; chỉ mở cửa sổ mới khi các cửa sổ phiếu đang có đều đầy). Con số 6 đổi được trong
+  *Settings ▸ VixTab: Max Tabs Per Window*. Mỗi lần mở tab, VixTab đếm lại số tab Claude mà từng cửa sổ đang có ngay lúc đó,
+  nên tab vừa đóng nhường chỗ ngay và không bao giờ mở thêm vào cửa sổ đã đầy. Lý do là mọi tab của một cửa sổ chạy
   chung một luồng renderer (đo trên máy 44 luồng: 14 cột cùng hiện làm luồng đó 102 % một lõi, mọi phiên đơ). Cửa sổ phiếu tự
   đóng khi hết tab. Mở tab không gọi model nên không tốn token, và không phải bấm cho phép tin cậy thư mục khi thư mục đang mở
   trong VS Code. Phiếu đơn giản có thể chạy trên mô hình rẻ hơn (`vixtab ticket new … --model sonnet`) cho riêng tab đó; mô hình

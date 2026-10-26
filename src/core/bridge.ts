@@ -66,14 +66,28 @@ export function callerWindow(): number {
   return pids.size ? (ancestors(process.pid, platform.processes()).find((p) => pids.has(p)) ?? 0) : 0;
 }
 
-/** Claude tabs in a window (-1 = the window did not answer). */
-export async function claudeTabCount(win: number): Promise<number> {
+/** Default of the extension setting vixtab.maxTabsPerWindow, also for extensions up to 0.8.0 (they do not report it). */
+export const MAX_TABS_DEFAULT = 6;
+
+export type WindowTabs = { n: number; max: number; layout: Layout | null };
+
+/** Claude tabs and the vixtab.maxTabsPerWindow setting from a window's layout answer. */
+export function tabsIn(r: { layout: Layout; maxTabs?: unknown }): WindowTabs {
+  const max = Number(r.maxTabs) >= 1 ? Math.floor(Number(r.maxTabs)) : MAX_TABS_DEFAULT;
+  return { n: r.layout.flatMap((g) => g.tabs).filter((t) => t.claude).length, max, layout: r.layout };
+}
+
+/** The Claude tabs a window holds right now, counted by the window itself, and its setting. n = -1: the window did not answer. */
+export async function windowTabs(win: number): Promise<WindowTabs> {
   try {
-    return (await layout(win)).flatMap((g) => g.tabs).filter((t) => t.claude).length;
+    return tabsIn(await send("layout", {}, 60_000, win));
   } catch {
-    return -1;
+    return { n: -1, max: MAX_TABS_DEFAULT, layout: null };
   }
 }
+
+/** Claude tabs in a window (-1 = the window did not answer). */
+export const claudeTabCount = async (win: number) => (await windowTabs(win)).n;
 
 /** Windows (any kind) that show a Claude tab with exactly this label. */
 export async function windowsWithLabel(label: string): Promise<number[]> {

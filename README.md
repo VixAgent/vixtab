@@ -33,7 +33,8 @@ the ticket is done. Every ticket works in its own git worktree and lands on `mai
   spends no tokens while nothing happens. [How it works ↓](#how-the-orchestration-saves-context)
 - **A tab per ticket, and a renderer per window.** Each tab is labeled with the ticket id and opens without stealing focus:
   in the orchestrator's own window first (up to 6 Claude tabs: 3 columns, then stacked), then stacked in **ticket windows** — separate VS Code
-  windows, five Claude tabs each — because all tabs of one window share one renderer thread. Creating a tab runs no model turn:
+  windows, six Claude tabs each — because all tabs of one window share one renderer thread. The 6 is the setting
+  *VixTab: Max Tabs Per Window*; the tabs are counted each time one opens. Creating a tab runs no model turn:
   it costs no tokens and the tab uses your default model. A simple ticket can run on a cheaper model instead
   (`ticket new … --model sonnet`): one short turn sets it for that tab only. [Why ↓](#one-renderer-per-window)
 - **Parallel without conflicts.** Atomic locks, one git worktree and branch per ticket, and a serialized merge queue that
@@ -181,16 +182,24 @@ So VixTab spreads tabs over windows (`"tabs"` in `vixtab.config.json`):
 
 | Mode | Where a new ticket tab goes |
 |---|---|
-| `auto` (default) | **the orchestrator's own window first**, until it holds `inWindowMax` (6) Claude tabs, the orchestrator included: new columns up to `columnsMax` (3), then stacked in the last column. Then the **ticket window** with the fewest Claude tabs below `perWindowMax` (5), stacked in one group; only when all are full does VixTab open a new ticket window |
+| `auto` (default) | **the orchestrator's own window first**, until it holds 6 Claude tabs, the orchestrator included: new columns up to `columnsMax` (3), then stacked in the last column. Then the **ticket window** with the fewest Claude tabs below 6, stacked in one group; only when all are full does VixTab open a new ticket window |
 | `windows` | always ticket windows; the orchestrator's window keeps only the orchestrator |
-| `columns` | always new columns in the orchestrator's window (fine for a few tickets) |
+| `columns` | always new columns in the orchestrator's window, up to 6 Claude tabs (fine for a few tickets) |
+
+The 6 is the extension setting **VixTab: Max Tabs Per Window** (`vixtab.maxTabsPerWindow`), read from each window. Each time
+a tab opens, VixTab counts the Claude tabs every window holds at that moment, so tabs that closed (finished tickets, tabs you
+closed) free their place and tabs you opened yourself count; the chosen window counts once more right before it opens the tab,
+and VixTab chooses again if it filled up meanwhile. A full window is never used: when no window has room and no ticket window
+can open, `session open` exits 6 like a closed resource gate, and the orchestrator queues the ticket. Only the
+*Start orchestrator* button (`--here`) ignores the cap. `inWindowMax` (the orchestrator's window) and `perWindowMax` (ticket
+windows) in `"tabs"` override the setting for one project.
 
 A ticket window is a VS Code window titled `[<project>] VixTab tickets N`, opened from
 `<repo>/.vixtab/windows/<project>-tickets-N.code-workspace` (kept out of git through
 `.git/info/exclude`). The file lives inside your repository on purpose: VS Code opens a workspace file from an untrusted
 location in Restricted Mode, where Claude Code does not run. When the last Claude tab of a ticket window closes, the window closes
 too (setting `vixtab.closeEmptyTicketWindows`). `vixtab session close` finds a tab in any window;
-`vixtab session count` lists every window with its Claude tabs and, for local VS Code, the busiest renderer thread
+`vixtab session count` lists every window with its Claude tabs and its cap (`claude_tabs=3/6`) and, for local VS Code, the busiest renderer thread
 (≈ 90 % or more ⇒ that window's tabs lag).
 
 ## The ticket lifecycle
@@ -286,7 +295,7 @@ wins, for a team that commits one on purpose; only that one can set `"home"`, ot
   "ports": { "base": 4000 },
   "env": { "VITE_PORT": "{port}" },
   "hotFiles": ["src/types.ts"],
-  "tabs": { "mode": "auto", "inWindowMax": 6, "columnsMax": 3, "perWindowMax": 5 },
+  "tabs": { "mode": "auto", "columnsMax": 3 },
   "sessions": { "max": 0, "minFreeRamMB": 8192, "maxSwapMB": 8192, "maxCpu": 0.85, "reserveMB": 1024 },
   "heavy": { "slots": 4, "mem": "6G", "headroomMB": 4096 }
 }

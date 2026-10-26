@@ -5,14 +5,14 @@
   },
   "metadata": {
     "description": "VixTab: orchestrate parallel Claude Code sessions in VS Code tabs.",
-    "version": "0.8.0"
+    "version": "0.8.1"
   },
   "plugins": [
     {
       "name": "vixtab",
       "source": "./",
       "description": "Skills for orchestrating parallel Claude Code sessions with VixTab (orchestrator + ticket worker).",
-      "version": "0.8.0"
+      "version": "0.8.1"
     }
   ]
 }

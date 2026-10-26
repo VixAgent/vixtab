@@ -62,7 +62,8 @@ three times. If it still fails, `session open` exits with code 4.
 
 All Claude tabs of one VS Code window run in that window's renderer thread. `vixtab session count` prints the busiest renderer
 thread of each local VS Code window; around 90 % or more means that window is saturated. Use ticket windows (`"tabs": {"mode":
-"windows"}` or a lower `perWindowMax`), and *View: Join All Editor Groups* (`vixtab tab join`) to stack the columns of an
+"windows"}`) or fewer tabs per window (*Settings ▸ VixTab: Max Tabs Per Window*, or `perWindowMax` in `"tabs"` for one
+project), and *View: Join All Editor Groups* (`vixtab tab join`) to stack the columns of an
 overloaded window. Do not reload a window that runs sessions: reloading restarts every Claude session in it.
 
 ## A ticket window does not open

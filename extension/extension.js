@@ -46,7 +46,15 @@ function layout() {
 
 const claudeTabs = () => vscode.window.tabGroups.all.flatMap((g) => g.tabs.filter(isClaudeTab).map((t) => ({ t, column: g.viewColumn })));
 
+// Most Claude tabs VixTab opens in this window (the CLI reads it with every layout, so a change applies to the next tab).
+function maxTabs() {
+  const n = Math.floor(Number(vscode.workspace.getConfiguration("vixtab").get("maxTabsPerWindow", 6)));
+  return n >= 1 ? n : 6;
+}
+
 // stack: put the tab into the last group instead of a new column (ticket windows keep one group of stacked tabs).
+// max: the CLI's cap for this window. The Claude tabs are counted again here, inside the queue of tab actions, because tabs may
+// have opened since the CLI counted them: at the cap, nothing opens and the CLI chooses another window.
 let opening = 0; // > 0 while a tab is being opened: a ticket window must not close itself meanwhile
 async function openSession(args) {
   opening++;
@@ -56,8 +64,13 @@ async function openSession(args) {
     opening--;
   }
 }
-async function openSessionNow({ session, prompt, focus = false, here = false, stack = false, label }) {
+async function openSessionNow({ session, prompt, focus = false, here = false, stack = false, label, max = 0 }) {
   if (!UUID.test(session || "")) throw new Error("session must be a UUID");
+  const held = claudeTabs().length;
+  if (max > 0 && held >= max) {
+    log(`open ${session}: not opened, this window holds ${held} Claude tabs (max ${max})`);
+    return { full: true, held, max, layout: layout() };
+  }
   for (let attempt = 1; ; attempt++) {
     const groups = vscode.window.tabGroups.all;
     const last = Math.max(...groups.map((g) => g.viewColumn));
@@ -122,7 +135,7 @@ async function closeTab({ label }) {
 }
 
 const ACTIONS = {
-  layout: async () => ({ layout: layout() }),
+  layout: async () => ({ layout: layout(), maxTabs: maxTabs() }),
   open: openSession,
   close: closeTab,
   even: async () => {
