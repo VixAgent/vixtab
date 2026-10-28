@@ -9,7 +9,9 @@ export const HELP = `vixtab usage — the Claude account's usage, read like Clau
 
   usage [--json] [--max-age <s>]     the 5-hour session, the week (all models), the week of single models, extra usage, each
                                      with its reset time, for the Claude Code login of this machine; a reading younger than
-                                     --max-age (default 60 s) is reused. Reading costs no usage. Exit 3 = usage unknown.
+                                     --max-age (default 60 s) is reused. Reading costs no usage. The server rate-limits
+                                     readings: after a failure the last reading (≤ 15 min old) is shown, marked as such.
+                                     Exit 3 = usage unknown.
   usage limit [<percent>]            print or set the usage limit (default ${DEFAULT_LIMIT}; also the extension setting VixTab: Usage
                                      Limit, or VIXTAB_USAGE_LIMIT). At or above it on the 5-hour session or the week:
                                      vixtab watch usage alerts, session open exits 6, the orchestrator pauses its tickets.
@@ -52,6 +54,7 @@ export async function usage(argv: string[]): Promise<void> {
     const u = await readUsage({ maxAgeMs });
     if (has(a, "json")) return void console.log(JSON.stringify({ ...u, limit, over: overLimit(u, limit).map((l) => l.kind) }));
     console.log(table(u, limit));
+    if (u.stale) console.log(`(the reading of ${localTime(u.at)}: a new one failed — ${u.stale})`);
     const over = overLimit(u, limit);
     if (over.length) console.log(over.map((l) => `OVER THE LIMIT: ${overLine(l, limit)}`).join("\n"));
   } catch (e) {
@@ -75,7 +78,10 @@ async function waitBelow(argv: string[]): Promise<void> {
     }
     let u: Usage | null = null, why = "";
     try {
-      u = await readUsage({ maxAgeMs: 0 });
+      const r = await readUsage({ maxAgeMs: 0 });
+      // A reading from before the reset says nothing about now.
+      if (r.stale) why = r.stale;
+      else u = r;
     } catch (e) {
       if (!(e instanceof VixError)) throw e;
       why = e.message;

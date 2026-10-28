@@ -2,8 +2,8 @@
 // alerts.
 //   ram  : log free RAM/swap every 30 s; alert when free RAM stays below --min-free three times in a row, or swap is above
 //          --max-swap. Prints the biggest processes.
-//   usage: read the Claude account's usage every 240 s (every 60 s within 10 points of the limit); alert when the 5-hour
-//          session or the week reaches the usage limit (default 96 %), with the reset time.
+//   usage: read the Claude account's usage every 240 s (every 120 s within 10 points of the limit: the server rate-limits
+//          readings); alert when the 5-hour session or the week reaches the usage limit (default 96 %), with the reset time.
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs, str } from "../core/args.ts";
@@ -50,7 +50,7 @@ async function watchUsage(argv: string[]): Promise<void> {
     const limit = fixed ?? usageLimit();
     let near = false;
     try {
-      const u = await readUsage({ maxAgeMs: 30_000 });
+      const u = await readUsage({ maxAgeMs: 60_000 });
       const over: Limit[] = overLimit(u, limit);
       if (over.length) {
         console.log(over.map((l) => `ALERT usage: ${overLine(l, limit)}`).join("\n"));
@@ -61,6 +61,6 @@ async function watchUsage(argv: string[]): Promise<void> {
     } catch (e) {
       if (!(e instanceof VixError)) throw e; // unknown for now (network, expired token): read again next time
     }
-    await sleep(near ? 60_000 : every);
+    await sleep(near ? Math.min(120_000, every) : every);
   }
 }

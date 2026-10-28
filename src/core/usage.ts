@@ -93,8 +93,9 @@ function login(): Login {
 }
 
 // One reading shared by every project, window and command of the machine; a failed reading is kept too, so a down network
-// is not asked again at every gate check.
-type Cached = Usage | { at: number; account: string; error: string };
+// is not asked again at every gate check. The endpoint rate-limits (HTTP 429, "Retry-After: 0" for minutes), so after a
+// failure nobody asks again before `until`: 1, 2, 4… up to 15 minutes after consecutive 429s, 1 minute after other errors.
+type Cached = { account: string; last?: Usage; error?: { at: number; message: string; until: number; count: number } };
 const cacheFile = () => join(CACHE, "usage.json");
 function writeCache(x: Cached) {
   mkdirSync(CACHE, { recursive: true });
@@ -102,13 +103,15 @@ function writeCache(x: Cached) {
   writeFileSync(tmp, JSON.stringify(x));
   renameSync(tmp, cacheFile());
 }
+/** A previous reading stands in for a failed one while it is this young; it is marked `stale`. */
+const STALE_OK_MS = 15 * 60_000;
 
-async function fetchUsage(token: string, timeoutMs: number): Promise<any> {
+async function fetchUsage(token: string, timeoutMs: number): Promise<{ status: number; body?: any; error?: string }> {
   let r: Response;
   try {
     r = await fetch(USAGE_URL, { headers: { Authorization: `Bearer ${token}`, "anthropic-beta": "oauth-2025-04-20" }, signal: AbortSignal.timeout(timeoutMs) });
   } catch (e) {
-    fail(`cannot reach ${USAGE_URL}: ${(e as Error).message}`, 3);
+    return { status: 0, error: `cannot reach ${USAGE_URL}: ${(e as Error).message}` };
   }
   const text = await r.text();
   if (!r.ok) {
@@ -117,36 +120,44 @@ async function fetchUsage(token: string, timeoutMs: number): Promise<any> {
       const j = JSON.parse(text);
       why = String(j?.error?.message ?? j?.error ?? why).slice(0, 200);
     } catch {}
-    fail(`reading the usage failed: HTTP ${r.status} ${why}`, 3);
+    return { status: r.status, error: `reading the usage failed: HTTP ${r.status} ${why}` };
   }
   try {
-    return JSON.parse(text);
+    return { status: r.status, body: JSON.parse(text) };
   } catch {
-    fail(`reading the usage failed: not JSON (${text.slice(0, 80)})`, 3);
+    return { status: r.status, error: `reading the usage failed: not JSON (${text.slice(0, 80)})` };
   }
 }
 
 /**
- * The usage of the account logged in now. A reading younger than `maxAgeMs` (default 60 s) of the same account is reused,
- * a failed one too. Throws VixError (code 3) when the usage cannot be known.
+ * The usage of the account logged in now. A reading younger than `maxAgeMs` (default 60 s) of the same account is reused.
+ * When a new reading fails (or failed a moment ago), the last good one stands in for 15 minutes, with `stale` = why;
+ * otherwise throws VixError (code 3): the usage is unknown.
  */
-export async function readUsage(o: { maxAgeMs?: number; timeoutMs?: number } = {}): Promise<Usage> {
+export async function readUsage(o: { maxAgeMs?: number; timeoutMs?: number } = {}): Promise<Usage & { stale?: string }> {
   const me = login();
+  const now = Date.now();
   const c: Cached | null = existsSync(cacheFile()) ? readJson(cacheFile()) : null;
-  if (c && c.account === me.account && Date.now() - c.at < (o.maxAgeMs ?? 60_000)) {
-    if ("error" in c) throw new VixError(c.error, 3);
-    return c;
+  const same = c && c.account === me.account ? c : null;
+  const last = same?.last;
+  if (last && now - last.at < (o.maxAgeMs ?? 60_000)) return last;
+  const staleOr = (message: string) => {
+    if (last && now - last.at < STALE_OK_MS) return { ...last, stale: message };
+    throw new VixError(message, 3);
+  };
+  if (same?.error && now < same.error.until) return staleOr(same.error.message);
+  const r = me.expiresAt && me.expiresAt <= now
+    ? { status: 0, error: `the access token of the Claude Code login expired at ${localTime(me.expiresAt)}; Claude Code renews it on its next request` }
+    : await fetchUsage(me.token, o.timeoutMs ?? 20_000);
+  if (r.error) {
+    const count = r.status === 429 ? (same?.error?.count ?? 0) + 1 : 1;
+    const wait = r.status === 429 ? Math.min(STALE_OK_MS, 60_000 * 2 ** (count - 1)) : 60_000;
+    writeCache({ account: me.account, last, error: { at: now, message: r.error, until: now + wait, count } });
+    return staleOr(r.error);
   }
-  try {
-    if (me.expiresAt && me.expiresAt <= Date.now())
-      fail(`the access token of the Claude Code login expired at ${localTime(me.expiresAt)}; Claude Code renews it on its next request`, 3);
-    const u: Usage = { at: Date.now(), account: me.account, plan: me.plan, ...parseUsage(await fetchUsage(me.token, o.timeoutMs ?? 20_000)) };
-    writeCache(u);
-    return u;
-  } catch (e) {
-    if (e instanceof VixError) writeCache({ at: Date.now(), account: me.account, error: e.message });
-    throw e;
-  }
+  const u: Usage = { at: now, account: me.account, plan: me.plan, ...parseUsage(r.body) };
+  writeCache({ account: me.account, last: u });
+  return u;
 }
 
 // ── Printing ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -169,12 +180,15 @@ export const shortLine = (u: Pick<Usage, "limits">) =>
   u.limits.filter((l) => l.kind === "session" || l.kind === "week").map((l) => `${l.kind === "session" ? "5h" : "week"} ${pct(l)}`).join(" · ");
 
 /** For the session gate: the usage line, and what is at or above the limit. An unknown usage never closes the gate. */
-export async function usageGate(maxAgeMs = 120_000): Promise<{ line: string; missing: string[] }> {
+export async function usageGate(maxAgeMs = 240_000): Promise<{ line: string; missing: string[] }> {
   const limit = usageLimit();
   try {
     const u = await readUsage({ maxAgeMs, timeoutMs: 8000 });
     const main = u.limits.filter((l) => l.kind === "session" || l.kind === "week");
-    return { line: `usage=${main.map((l) => `${l.kind === "session" ? "5h" : "week"}:${Math.floor(l.percent)}%`).join(",")}/${limit}%`, missing: overLimit(u, limit).map((l) => `usage: ${overLine(l, limit)}`) };
+    return {
+      line: `usage=${main.map((l) => `${l.kind === "session" ? "5h" : "week"}:${Math.floor(l.percent)}%`).join(",")}/${limit}%${u.stale ? `(${localTime(u.at)})` : ""}`,
+      missing: overLimit(u, limit).map((l) => `usage: ${overLine(l, limit)}`),
+    };
   } catch {
     return { line: "usage=?", missing: [] };
   }

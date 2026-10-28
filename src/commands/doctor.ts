@@ -11,7 +11,7 @@ import { fetchMain } from "../core/mainline.ts";
 import { ancestors } from "../core/proc.ts";
 import { measure } from "../core/resources.ts";
 import { run } from "../core/run.ts";
-import { overLimit, overLine, readUsage, shortLine, usageLimit } from "../core/usage.ts";
+import { localTime, overLimit, overLine, readUsage, shortLine, usageLimit } from "../core/usage.ts";
 import { native, samePath } from "../core/util.ts";
 import { platform } from "../platform/index.ts";
 import { VERSION } from "../version.ts";
@@ -108,7 +108,12 @@ export async function doctor(argv: string[]): Promise<void> {
   try {
     const u = await readUsage();
     const over = overLimit(u, limit);
-    add(over.length ? "WARN" : "OK", "usage", `${u.account} ${u.plan}: ${shortLine(u)} (limit ${limit} %)${over.length ? " — at the limit: " + over.map((l) => overLine(l, limit)).join("; ") : ""}`, over.length ? "new tabs wait until it resets (vixtab usage wait)" : undefined);
+    add(
+      over.length ? "WARN" : "OK",
+      "usage",
+      `${u.account} ${u.plan}: ${shortLine(u)} (limit ${limit} %)${u.stale ? ` read ${localTime(u.at)}, newer reading failed: ${u.stale}` : ""}${over.length ? " — at the limit: " + over.map((l) => overLine(l, limit)).join("; ") : ""}`,
+      over.length ? "new tabs wait until it resets (vixtab usage wait)" : undefined,
+    );
   } catch (e) {
     add("WARN", "usage", `unknown: ${(e as Error).message}`, "the usage guard cannot see the limit; Claude Code logged in with a claude.ai plan is needed");
   }

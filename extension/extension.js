@@ -522,13 +522,16 @@ function usageSection(u) {
     ...(u.extra ? [`Extra usage: ${u.extra.enabled ? "on" : "off"}`] : []),
     "",
     `Usage limit: ${u.limit} % (Settings ▸ VixTab: Usage Limit). At or above it on the 5-hour session or the week, the orchestrator pauses its ticket sessions and reopens them when the limit resets; new tabs do not open meanwhile.`,
-    `Read ${when(u.at)}. Click to read again.`,
+    u.stale ? `Read ${when(u.at)}; a newer reading failed (${u.stale}). Click to read again.` : `Read ${when(u.at)}. Click to read again.`,
   ].join("\n");
   return node("Claude usage", {
     ...base,
     icon: over ? "warning" : "dashboard",
     color: over ? "charts.red" : near ? "charts.yellow" : undefined,
-    description: main.map((l) => `${l.kind === "session" ? "5h" : "week"} ${Math.floor(l.percent)} %`).join(" · ") + (over ? ` — at the ${u.limit} % limit` : ""),
+    description:
+      main.map((l) => `${l.kind === "session" ? "5h" : "week"} ${Math.floor(l.percent)} %`).join(" · ") +
+      (over ? ` — at the ${u.limit} % limit` : "") +
+      (u.stale ? ` (as of ${new Date(u.at).toLocaleTimeString(undefined, { timeStyle: "short" })})` : ""),
     tooltip,
   });
 }

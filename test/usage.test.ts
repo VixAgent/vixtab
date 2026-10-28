@@ -85,7 +85,29 @@ describe("usage", () => {
     const cache = join(s.root, "cache", "usage.json");
     expect(existsSync(cache)).toBe(true);
     expect(JSON.parse(readFileSync(cache, "utf8"))).toMatchObject({ account: "someone@example.com" });
-    // An unknown usage never closes the session gate: watch and wait keep reading, the gate line says usage=?.
+    expect(JSON.parse(readFileSync(cache, "utf8")).error.until).toBeGreaterThan(Date.now());
     expect(s.vt(["usage"]).code).toBe(3);
+  });
+
+  test("a failed reading falls back to the last good one (≤ 15 min old), marked stale", () => {
+    const s = sandbox();
+    writeFileSync(join(s.claude, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "x", expiresAt: Date.now() - 60_000 } }));
+    writeFileSync(join(s.claude, ".claude.json"), JSON.stringify({ oauthAccount: { emailAddress: "someone@example.com" } }));
+    mkdirSync(join(s.root, "cache"));
+    const last = (minutesAgo: number) => ({
+      account: "someone@example.com",
+      last: { at: Date.now() - minutesAgo * 60_000, account: "someone@example.com", plan: "max", extra: null, limits: [{ kind: "session", label: "5-hour session", percent: 97, resetsAt: Date.now() + 3_600_000 }] },
+    });
+    writeFileSync(join(s.root, "cache", "usage.json"), JSON.stringify(last(5)));
+    const r = s.vt(["usage", "--json"]);
+    expect(r.code).toBe(0);
+    expect(JSON.parse(r.out)).toMatchObject({ over: ["session"], limit: 96 });
+    expect(JSON.parse(r.out).stale).toContain("expired");
+    // Too old to stand in: unknown.
+    writeFileSync(join(s.root, "cache", "usage.json"), JSON.stringify(last(20)));
+    expect(s.vt(["usage", "--json"]).code).toBe(3);
+    // Another account's reading is never used.
+    writeFileSync(join(s.root, "cache", "usage.json"), JSON.stringify({ ...last(1), account: "other@example.com" }));
+    expect(s.vt(["usage", "--json"]).code).toBe(3);
   });
 });
