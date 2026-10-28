@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.9.0 — 2026-10-29
+
+- **Usage guard for your Claude plan.** VixTab reads the usage of the account Claude Code is logged in with, the numbers of
+  `/usage`: the 5-hour session, the week (all models), the week of single models and extra usage, each with its reset time.
+  It uses the login Claude Code already keeps on the machine (`<claude dir>/.credentials.json`) and never refreshes or
+  rewrites it; reading costs no usage, and nothing else needs to be installed. New commands: `vixtab usage [--json]`,
+  `vixtab usage limit [<percent>]`, `vixtab usage wait` (sleeps until the account is below the limit, then exits) and
+  `vixtab watch usage` (exits with `ALERT usage: …` when the 5-hour session or the week reaches the limit; it reads every
+  240 s, every 60 s within 10 points of the limit). One reading is shared by every project and window (cached in
+  `~/.cache/vixtab/usage.json`).
+- **Usage limit setting.** *VixTab: Usage Limit* (`vixtab.usageLimit`, default 96 %), kept in `~/.vixtab/config.json` for
+  every project on the machine (`VIXTAB_USAGE_LIMIT` overrides it). The orchestrator skill starts `vixtab watch usage` with
+  `vixtab watch ram`; on an alert it pauses: no new tabs, each ticket tab closed without releasing its ticket (still ⏳ DOING,
+  the work stays in its worktree), a handover note on the board, then `vixtab usage wait` in the background, and it reopens
+  each ticket with `claim --takeover` once the limit has reset. `session open` exits 6 with `usage: …` while the account is
+  at the limit; `session count` and `doctor` show the usage. An unknown usage (no claude.ai login, no network, an expired
+  access token) never blocks anything.
+- **Claude usage in the panel.** A **Claude usage** row shows `5h n % · week n %` (yellow within 10 points of the limit, red
+  at it), the reset times and the account in its tooltip; click it (or *VixTab: Show Claude usage*) to read it again.
+
 ## 0.8.1 — 2026-10-26
 
 - **Max tabs per window, in the settings.** New setting *VixTab: Max Tabs Per Window* (`vixtab.maxTabsPerWindow`, default

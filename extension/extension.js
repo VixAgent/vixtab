@@ -288,6 +288,27 @@ function scope() {
   return "global";
 }
 
+// Usage limit (percent): at or above it on the Claude account's 5-hour session or week, the orchestrator pauses its ticket
+// sessions and new tabs do not open. The CLI keeps it in ~/.vixtab/config.json for every project; a setting the user has set
+// explicitly is copied there (`vixtab usage limit <n>`).
+function usageLimitSetting() {
+  const s = vscode.workspace.getConfiguration("vixtab").inspect("usageLimit");
+  const v = s && (s.workspaceFolderValue ?? s.workspaceValue ?? s.globalValue);
+  return Number.isInteger(v) && v >= 1 && v <= 100 ? v : null;
+}
+async function syncUsageLimit(announce) {
+  const n = usageLimitSetting();
+  if (n === null) return;
+  let saved = null;
+  try {
+    saved = JSON.parse(fs.readFileSync(PREFS, "utf8")).usageLimit;
+  } catch {}
+  if (saved === n) return;
+  const r = await runCli(["usage", "limit", String(n)], undefined, !announce);
+  if (r.code !== 0) out.show(true);
+  else if (announce) vscode.window.setStatusBarMessage(`VixTab: usage limit = ${n} % for every project`, 8000);
+}
+
 async function setup(silent, chosen) {
   const sc = chosen || scope();
   const r = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "VixTab: setting up…" }, () => runCli(["setup", "--scope", sc]));
@@ -484,10 +505,39 @@ function tabsSection(o, loads) {
   });
 }
 
+// Claude usage: the account's 5-hour session and week (`vixtab usage --json`), the limit, and the reset times.
+const isMain = (l) => l.kind === "session" || l.kind === "week";
+// Reset times come a few ms before or after the minute: show the nearest minute.
+const atMinute = (t) => new Date(Math.round(t / 60000) * 60000).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+function usageSection(u) {
+  const base = { id: "usage", command: "vixtab.showUsage" };
+  if (!u) return node("Claude usage", { ...base, icon: "dashboard", description: "reading…" });
+  if (u.error)
+    return node("Claude usage", { ...base, icon: "dashboard", description: "unknown", tooltip: `${u.error}\n\nThe usage guard needs Claude Code logged in with a claude.ai plan. Click to read again.` });
+  const main = u.limits.filter(isMain);
+  const over = u.over && u.over.length > 0, near = main.some((l) => l.percent >= u.limit - 10);
+  const tooltip = [
+    `${u.account} · ${u.plan}`,
+    ...u.limits.map((l) => `${l.label}: ${Math.floor(l.percent)} %${l.resetsAt ? ` — resets ${atMinute(l.resetsAt)}` : ""}`),
+    ...(u.extra ? [`Extra usage: ${u.extra.enabled ? "on" : "off"}`] : []),
+    "",
+    `Usage limit: ${u.limit} % (Settings ▸ VixTab: Usage Limit). At or above it on the 5-hour session or the week, the orchestrator pauses its ticket sessions and reopens them when the limit resets; new tabs do not open meanwhile.`,
+    `Read ${when(u.at)}. Click to read again.`,
+  ].join("\n");
+  return node("Claude usage", {
+    ...base,
+    icon: over ? "warning" : "dashboard",
+    color: over ? "charts.red" : near ? "charts.yellow" : undefined,
+    description: main.map((l) => `${l.kind === "session" ? "5h" : "week"} ${Math.floor(l.percent)} %`).join(" · ") + (over ? ` — at the ${u.limit} % limit` : ""),
+    tooltip,
+  });
+}
+
 class Panel {
   constructor() {
     this.changed = new vscode.EventEmitter();
     this.onDidChangeTreeData = this.changed.event;
+    this.usage = null; // { at, o } — o: the last `vixtab usage --json` ({ error } when unknown)
     this.board = null; // { at, folder, ok, tickets, error }
     this.tabs = null; // last `vixtab tabs --json`, or { error }
     this.loads = null; // { at, windows: { [extension host pid]: load }, busiest } from the last `vixtab tabs --json --load`
@@ -523,6 +573,17 @@ class Panel {
   }
   getTreeItem(e) {
     return e;
+  }
+  // Every window shows the same account: the CLI shares one reading (4 min) between windows and projects.
+  async loadUsage(fresh) {
+    if (!fresh && this.usage && Date.now() - this.usage.at < 240000) return this.usage.o;
+    const r = await runCli(["usage", "--json", "--max-age", fresh ? "0" : "240"], undefined, true);
+    let o = null;
+    try {
+      o = JSON.parse(r.stdout);
+    } catch {}
+    this.usage = { at: Date.now(), o: o || { error: r.text.split("\n")[0] || "vixtab usage gave no answer" } };
+    return this.usage.o;
   }
   async loadBoard(folder) {
     if (this.board && this.board.folder === folder && Date.now() - this.board.at < 60000) return this.board;
@@ -565,13 +626,14 @@ class Panel {
         );
       } else rows.push(node("Board", { icon: "checklist", description: b.ok ? "empty" : "none yet — the orchestrator creates it", tooltip: b.ok ? "" : b.error }));
     }
+    rows.push(usageSection(await this.loadUsage(false)));
     if (!this.tabs) await this.fetchTabs(false);
     rows.push(tabsSection(this.tabs, this.loads));
     rows.push(
       node("Versions", { icon: "versions", description: `extension v${version}`, command: "vixtab.status", tooltip: "CLI, extension in each window, skills, board (vixtab status)" }),
       node("Create playground", { icon: "beaker", command: "vixtab.createPlayground", tooltip: "A sandbox with five sample tickets" }),
       node("Run doctor", { icon: "pulse", command: "vixtab.doctor" }),
-      node("Settings", { icon: "gear", description: scope() === "global" ? "skills: every project" : "skills: chosen projects", command: "workbench.action.openSettings", args: [SETTINGS] }),
+      node("Settings", { icon: "gear", description: `${scope() === "global" ? "skills: every project" : "skills: chosen projects"} · usage limit ${(this.usage && this.usage.o && this.usage.o.limit) || usageLimitSetting() || 96} %`, command: "workbench.action.openSettings", args: [SETTINGS] }),
     );
     return rows;
   }
@@ -658,6 +720,12 @@ function activate(context) {
     }),
     vscode.commands.registerCommand("vixtab.enableHere", () => enableHere(panel)),
     vscode.commands.registerCommand("vixtab.showTicket", showTicket),
+    vscode.commands.registerCommand("vixtab.showUsage", async () => {
+      out.show(true);
+      await runCli(["usage", "--max-age", "0"]);
+      panel.usage = null; // the next panel read takes the reading the CLI just made
+      panel.refresh(false);
+    }),
     vscode.commands.registerCommand("vixtab.openSettings", () => vscode.commands.executeCommand("workbench.action.openSettings", SETTINGS)),
     vscode.commands.registerCommand("vixtab.createPlayground", createPlayground),
     vscode.commands.registerCommand("vixtab.evenColumns", () => vscode.commands.executeCommand("workbench.action.evenEditorWidths")),
@@ -683,7 +751,12 @@ function activate(context) {
       if (!e.affectsConfiguration("vixtab.skillsScope") || needsSetup() || !vscode.window.state.focused) return;
       void runCli(["skills", "scope", scope()]).then((r) => (r.code === 0 ? vscode.window.setStatusBarMessage(`VixTab: skills scope = ${scope() === "global" ? "every project" : "only orchestrated repositories"}`, 8000) : out.show(true)));
     }),
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (!e.affectsConfiguration("vixtab.usageLimit") || !vscode.window.state.focused) return;
+      void syncUsageLimit(true).then(() => ((panel.usage = null), panel.refresh(false))); // the panel shows the limit
+    }),
   );
+  void syncUsageLimit(false); // a limit set in the settings before this version, or on another machine through Settings Sync
 
   const key = `vixtab.setupAsked.${context.extension.packageJSON.version}`;
   if (needsSetup() && !isTicketWindow() && !context.globalState.get(key)) {

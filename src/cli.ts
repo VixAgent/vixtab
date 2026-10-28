@@ -14,6 +14,7 @@ import { status, HELP as STATUS } from "./commands/status.ts";
 import { tab, HELP as TAB } from "./commands/tab.ts";
 import { tabs, HELP as TABS } from "./commands/tabs.ts";
 import { ticket, HELP as TICKET } from "./commands/ticket.ts";
+import { usage, HELP as USAGE_HELP } from "./commands/usage.ts";
 import { wait, HELP as WAIT } from "./commands/wait.ts";
 import { watch, HELP as WATCH } from "./commands/watch.ts";
 import { VixError } from "./core/util.ts";
@@ -41,6 +42,12 @@ Usage: vixtab <command> …      (vixtab help <command> for details)
     tabs [--json] [--load] | clear    every Claude tab of this machine by window, state, ticket; the closed ones
     wait <id>[:pid] …                 sleep until a ticket is done / asks / needs a rebase / its session died
 
+  Claude usage
+    usage [--json]        the account's 5-hour session and weekly usage with reset times (what /usage shows)
+    usage limit [<pct>]   the usage limit (default 96 %): at or above it the orchestrator pauses its ticket sessions
+    usage wait            sleep until the usage is below the limit again (after a pause)
+    watch usage           exit (alert) when the 5-hour session or the week reaches the usage limit
+
   Machine
     heavy -- <cmd>        run a heavy step through elastic, memory-capped slots
     watch ram             exit (alert) when the machine runs low on memory
@@ -56,6 +63,7 @@ const COMMANDS: Record<string, [(argv: string[]) => Promise<void>, string]> = {
   tab: [tab, TAB],
   tabs: [tabs, TABS],
   wait: [wait, WAIT],
+  usage: [usage, USAGE_HELP],
   heavy: [heavy, HEAVY],
   watch: [watch, WATCH],
   procs: [procs, PROCS],

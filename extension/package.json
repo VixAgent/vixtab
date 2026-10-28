@@ -3,7 +3,7 @@
   "publisher": "vixagent",
   "displayName": "VixTab — parallel Claude Code tabs",
   "description": "Orchestrate many Claude Code sessions on one repo: one fresh, labeled tab per ticket in its own column, conflict-free merges, context-saving orchestration.",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "license": "MIT",
   "icon": "icon.png",
   "author": "phanthaitrung",
@@ -28,6 +28,7 @@
       { "command": "vixtab.refresh", "title": "Refresh", "category": "VixTab", "icon": "$(refresh)" },
       { "command": "vixtab.enableHere", "title": "Set up VixTab for this project", "category": "VixTab" },
       { "command": "vixtab.showTicket", "title": "Show ticket", "category": "VixTab" },
+      { "command": "vixtab.showUsage", "title": "Show Claude usage (5-hour session, week)", "category": "VixTab" },
       { "command": "vixtab.clearClosedTabs", "title": "Clear finished and closed tabs", "category": "VixTab", "icon": "$(clear-all)" },
       { "command": "vixtab.openSettings", "title": "Settings", "category": "VixTab", "icon": "$(gear)" }
     ],
@@ -74,6 +75,13 @@
           "minimum": 1,
           "maximum": 50,
           "markdownDescription": "Most Claude tabs VixTab opens in one VS Code window, the orchestrator's tab included. Before a ticket tab opens, VixTab counts the Claude tabs each window holds at that moment: the tab goes to the orchestrator's window while it is below this number, then to a ticket window below it, and a new ticket window opens only when every one is full. All tabs of one window share one renderer thread, so fewer tabs per window lag less. `\"tabs\"` in a project's `vixtab.config.json` (`inWindowMax`, `perWindowMax`) overrides it for that project."
+        },
+        "vixtab.usageLimit": {
+          "type": "integer",
+          "default": 96,
+          "minimum": 1,
+          "maximum": 100,
+          "markdownDescription": "Usage limit, in percent of the Claude account's plan. When the **5-hour session** or the **week (all models)** reaches it, the VixTab orchestrator pauses: it closes its ticket tabs without releasing the tickets (their work stays in their worktrees), waits for the limit to reset without spending tokens, then reopens them where they stopped. New tabs do not open meanwhile. VixTab reads the usage itself, like Claude Code's `/usage`, for every project on this machine. Saved for the `vixtab` command too (`vixtab usage limit`)."
         },
         "vixtab.closeEmptyTicketWindows": { "type": "boolean", "default": true, "description": "Close a ticket window (opened by VixTab) when its last Claude tab closes." }
       }

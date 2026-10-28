@@ -13,6 +13,7 @@ Start with `vixtab doctor` inside the repository: every FAIL line comes with its
 | 4 (other) | the tab did not start its Claude process, or the extension did not answer | retry once; `vixtab tab windows` lists the windows that run the extension |
 | 5 | a Claude tab with this label is already open | pick another label or close that tab |
 | 6 | resource gate closed (RAM, swap, commit, CPU, or `sessions.max`) | keep the ticket queued; `vixtab session count` shows what is missing |
+| 6 + `usage:` | the Claude account's 5-hour session or week is at the usage limit (`vixtab usage limit`, default 96 %) | pause: `vixtab usage wait` sleeps until it resets; or raise the limit |
 
 ## "this board is on origin/main, published with your code"
 

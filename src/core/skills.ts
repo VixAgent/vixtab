@@ -4,12 +4,13 @@
 //                      .git/info/exclude unless the team commits them; sessions of other projects never see them.
 // VixTab 0.3.1 was project-only; 0.4.0 made the scope a choice. Removal only touches files that carry the marker.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import ORCHESTRATE from "../../skills/vixtab-orchestrate/SKILL.md" with { type: "text" };
 import TICKET from "../../skills/vixtab-ticket/SKILL.md" with { type: "text" };
 import { skillsDir } from "./claude.ts";
+import { readPrefs, savePrefs } from "./prefs.ts";
 import { git } from "./run.ts";
-import { HOME, fail, native } from "./util.ts";
+import { fail, native } from "./util.ts";
 import { VERSION } from "../version.ts";
 
 export const SKILLS: Record<string, string> = { "vixtab-orchestrate": ORCHESTRATE, "vixtab-ticket": TICKET };
@@ -21,7 +22,6 @@ export const globalSkillsDir = () => skillsDir();
 // ── Scope ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 export type Scope = "global" | "project";
 export const DEFAULT_SCOPE: Scope = "global";
-const prefsFile = () => process.env.VIXTAB_PREFS ?? join(HOME, ".vixtab", "config.json");
 export function parseScope(s: string | undefined): Scope {
   const v = (s ?? "").toLowerCase();
   if (["global", "all", "allprojects", "all-projects"].includes(v)) return "global";
@@ -29,26 +29,14 @@ export function parseScope(s: string | undefined): Scope {
   fail(`scope must be "global" (every project) or "project" (only the repositories you orchestrate), got '${s ?? ""}'`, 2);
 }
 export function savedScope(): Scope | null {
-  try {
-    const s = JSON.parse(readFileSync(prefsFile(), "utf8")).skillsScope;
-    return s === "global" || s === "project" ? s : null;
-  } catch {
-    return null;
-  }
+  const s = readPrefs().skillsScope;
+  return s === "global" || s === "project" ? s : null;
 }
 /** VIXTAB_SKILLS_SCOPE, else the saved choice, else every project. */
 export const currentScope = (): Scope => (process.env.VIXTAB_SKILLS_SCOPE ? parseScope(process.env.VIXTAB_SKILLS_SCOPE) : (savedScope() ?? DEFAULT_SCOPE));
-function saveScope(s: Scope): void {
-  let prefs: any = {};
-  try {
-    prefs = JSON.parse(readFileSync(prefsFile(), "utf8"));
-  } catch {}
-  mkdirSync(dirname(prefsFile()), { recursive: true });
-  writeFileSync(prefsFile(), JSON.stringify({ ...prefs, skillsScope: s }, null, 2) + "\n");
-}
 /** Save the scope and make the user-level skills match it (installed for "global", removed for "project"). */
 export function applyScope(s: Scope, force = false): string[] {
-  saveScope(s);
+  savePrefs({ skillsScope: s });
   const notes = s === "global" ? installSkills(globalSkillsDir(), force) : removeSkills(globalSkillsDir());
   notes.push(
     s === "global"

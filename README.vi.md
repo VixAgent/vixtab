@@ -48,6 +48,10 @@ worktree git riêng và vào nhánh `main` qua hàng đợi gộp có chạy tes
 - **Cổng tài nguyên thay cho trần số phiên.** Chỉ mở tab mới khi RAM trống (đã trừ phần dành cho các tab vừa mở trong 90 giây),
   swap, bộ nhớ cam kết (Windows) và CPU đều còn chỗ. Lượt nặng (trọn bộ test, E2E, dựng, trình duyệt) đi qua các ô co giãn có
   trần bộ nhớ: cgroup trên Linux, Job Object trên Windows.
+- **Canh hạn mức gói Claude.** VixTab tự đọc hạn mức của tài khoản như lệnh `/usage` của Claude Code, không cần cài thêm công
+  cụ nào. Khi phiên 5 giờ hoặc hạn mức tuần chạm ngưỡng (mặc định 96 %, chỉnh ở *VixTab: Usage Limit* hoặc
+  `vixtab usage limit`), phiên điều phối đóng các tab phiếu nhưng giữ phiếu ở ⏳ DOING, chờ tới giờ đặt lại mà không tốn token,
+  rồi mở lại từng phiếu làm tiếp từ chỗ dừng. Panel VixTab có dòng **Claude usage** cho xem hạn mức hiện tại.
 - **Hỏi đáp gọn.** Phiên bị vướng hỏi bằng `vixtab ticket ask`; câu hỏi ghi vào phiếu trên bảng phiếu, phiên điều phối được đánh thức
   và trả lời một lần.
 - **Dọn dẹp an toàn.** `done` từ chối đẩy mã chưa qua test, dừng tiến trình còn chạy trong worktree, gỡ worktree. Không bao giờ

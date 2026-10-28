@@ -106,6 +106,15 @@ shows what would move). The old files stay in your remote's git history; rewriti
   cap: a cgroup scope on Linux, a Job Object on Windows.
 - **`vixtab watch ram`** alerts the orchestrator before the machine starts swapping.
 
+## Your Claude plan is guarded
+
+- VixTab reads the usage of the Claude account you are logged in with, like Claude Code's `/usage`: the 5-hour session and
+  the week, with their reset times. The panel shows it in **Claude usage**; `vixtab usage` prints it. Nothing else to
+  install, and reading costs no usage.
+- **VixTab: Usage Limit** (`vixtab.usageLimit`, default 96 %): when the 5-hour session or the week reaches it, the
+  orchestrator closes its ticket tabs without releasing the tickets, waits for the reset without spending tokens, and reopens
+  them where they stopped. New tabs do not open meanwhile.
+
 ## Clean-up you can trust
 
 - `done` stops what still runs in the worktree (dev servers, browsers, test runners), then removes the worktree and branch.

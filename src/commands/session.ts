@@ -13,6 +13,7 @@ import { locksOf } from "../core/mainline.ts";
 import { alive } from "../core/proc.ts";
 import { measure } from "../core/resources.ts";
 import { logTab, openTabByLabel, readTabLog, ticketStatus } from "../core/tabs.ts";
+import { usageGate } from "../core/usage.ts";
 import { platform } from "../platform/index.ts";
 import { fail, native, norm, samePath, sleep } from "../core/util.ts";
 
@@ -35,7 +36,8 @@ export const HELP = `vixtab session — fresh, labeled Claude Code tabs in VS Co
         … model=<model or default>
         Exit codes: 2 bad label · 3 Claude CLI problem (3 + "trust" = folder not trusted: re-run with --trust after the
         user agrees) · 4 tab problem (4 + "reload needed" = Claude Code's tab state is broken: the user must reload the
-        window) · 5 label already open · 6 resource gate closed or every window full (queue the ticket, retry later)
+        window) · 5 label already open · 6 resource gate closed or every window full (queue the ticket, retry later; with
+        "usage:" the Claude account is at the usage limit: wait for it with vixtab usage wait)
   session close <label> [<pid>]    close the tab with exactly this label; with pid, wait until that CLI has exited.
         Tab actions run one at a time; closing a tab can take up to a minute while Claude Code shuts the session down.
         Exit codes: 1 no tab or several tabs with this label · 2 the CLI did not exit · 4 extension did not answer
@@ -46,7 +48,9 @@ export const HELP = `vixtab session — fresh, labeled Claude Code tabs in VS Co
   (every Claude tab of this machine by window, and the closed ones: vixtab tabs)
 
 Resource gate (no fixed session cap by default): free RAM − RAM reserved for sessions opened in the last 90 s ≥ minFreeRamMB,
-swap ≤ maxSwapMB, commit ≤ 85 % (Windows), CPU ≤ 85 %. Configure in vixtab.config.json "sessions" or VIXTAB_* variables.`;
+swap ≤ maxSwapMB, commit ≤ 85 % (Windows), CPU ≤ 85 %. Configure in vixtab.config.json "sessions" or VIXTAB_* variables.
+The Claude account's 5-hour session and week must also be below the usage limit (vixtab usage limit, default 96 %); an
+unknown usage does not close the gate.`;
 
 type Recent = { at: number; label: string };
 const recentFile = (c: Config) => join(c.locks, "recent-opens.json");
@@ -61,9 +65,13 @@ function recentOpens(c: Config): Recent[] {
 export async function gate(c: Config) {
   const n = liveSessionsUnder([c.repo, c.home]).length;
   const reserved = recentOpens(c).length * c.sessions.reserveMB;
-  const g = await measure({ minFreeMB: c.sessions.minFreeRamMB, maxSwapMB: c.sessions.maxSwapMB, maxCommit: c.sessions.maxCommit, maxCpu: c.sessions.maxCpu }, reserved);
+  const [g, u] = await Promise.all([
+    measure({ minFreeMB: c.sessions.minFreeRamMB, maxSwapMB: c.sessions.maxSwapMB, maxCommit: c.sessions.maxCommit, maxCpu: c.sessions.maxCpu }, reserved),
+    usageGate(),
+  ]);
   if (c.sessions.max > 0 && n >= c.sessions.max) g.missing.unshift(`sessions ${n} ≥ max ${c.sessions.max}`);
-  return { ...g, line: `sessions=${n}${c.sessions.max > 0 ? "/" + c.sessions.max : ""} ${g.line}` };
+  g.missing.push(...u.missing);
+  return { ...g, line: `sessions=${n}${c.sessions.max > 0 ? "/" + c.sessions.max : ""} ${g.line} ${u.line}` };
 }
 
 /** The most Claude tabs VixTab puts in a window: "tabs" in vixtab.config.json (or VIXTAB_TABS_*) when set, else the window's own setting. */

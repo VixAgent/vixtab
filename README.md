@@ -48,6 +48,10 @@ the ticket is done. Every ticket works in its own git worktree and lands on `mai
 - **Resource gates instead of a fixed session cap.** A new tab opens only when free RAM (minus RAM reserved for tabs opened in
   the last 90 s), swap, commit charge (Windows) and CPU have room. Heavy steps (full test suites, E2E, builds, browsers) go
   through elastic, memory-capped slots — a cgroup scope on Linux, a Job Object on Windows.
+- **A usage guard for your Claude plan.** VixTab reads the account's usage itself, like Claude Code's `/usage` (nothing else to
+  install). When the 5-hour session or the week reaches your limit (default 96 %), the orchestrator closes its ticket tabs
+  without releasing the tickets, waits for the reset without spending tokens, and reopens them where they stopped.
+  [How ↓](#usage-guard)
 - **Questions without ping-pong.** A blocked session asks with `vixtab ticket ask`; the question lands in the ticket on
   the board, the orchestrator is woken up, answers once, and the session continues.
 - **Clean-up you can trust.** `done` refuses to push untested code, stops processes left in the worktree (dev servers,
@@ -255,6 +259,24 @@ Defaults scale with the machine: minimum free RAM = total/8 (4–16 GB), maximum
 `--mem` says otherwise; a run starts only if free RAM minus the caps of runs that started in the last 90 s leaves its own
 cap + 4 GB. `vixtab session count` shows the gate; `vixtab watch ram` alerts the orchestrator before the machine swaps.
 
+## Usage guard
+
+Many sessions in parallel use a Claude plan fast. VixTab reads the usage of the account Claude Code is logged in with — the
+same numbers as `/usage`: the 5-hour session, the week (all models), the week of single models, each with its reset time.
+It reads them with the login Claude Code already keeps on the machine (`~/.claude/.credentials.json`) and never changes that
+login; reading costs no usage. Nothing else is needed, in any project.
+
+- `vixtab usage` prints the usage; the panel's **Claude usage** row shows it too (yellow within 10 points of the limit, red
+  at the limit).
+- The **usage limit** is a percent, 96 by default: the setting *VixTab: Usage Limit* (`vixtab.usageLimit`) or
+  `vixtab usage limit <percent>`, one value for every project on the machine.
+- The orchestrator runs `vixtab watch usage` in the background. When the 5-hour session or the week reaches the limit, it
+  pauses: no new tabs, each ticket tab closed **without releasing its ticket** (still ⏳ DOING, the work stays in its
+  worktree), a handover note on the board. Then `vixtab usage wait` sleeps until the limit resets, and the orchestrator
+  reopens each ticket with `claim --takeover`, where it stopped.
+- `session open` also refuses (exit 6, reason `usage: …`) while the account is at the limit. An unknown usage (no claude.ai
+  login, no network) never blocks anything.
+
 ## Commands
 
 | Command | What it does |
@@ -273,6 +295,7 @@ cap + 4 GB. `vixtab session count` shows the gate; `vixtab watch ram` alerts the
 | `vixtab tabs [--json] [--load]` · `tabs clear` | every Claude tab of this machine by VS Code window: state and for how long, ticket status, model, renderer load (`--load`); the tabs VixTab opened that have closed |
 | `vixtab tab layout` · `even` · `join` · `open <session>` · `close <label>` · `windows` · `new-window` | low-level tab control, ticket windows |
 | `vixtab wait [--as <name>] <id>[:<pid>] …` | sleep until `done` / `ready` / `ask` / `rebase` / `gone` events (any session can use it) |
+| `vixtab usage [--json]` · `usage limit [<percent>]` · `usage wait` · `watch usage` | the Claude account's usage and reset times · the usage limit · sleep until below it · alert when it is reached |
 | `vixtab heavy [--mem 6G] -- <command>` | run a heavy step through elastic, capped slots |
 | `vixtab watch ram` · `vixtab procs list\|kill <dir>` · `procs orphans [--kill]` · `vixtab lock <name> -- <cmd>` | machine helpers |
 | `vixtab playground create\|demo board\|demo tabs\|demo heavy\|check\|reset\|remove` | the sandbox |

@@ -21,6 +21,9 @@ Linux and in Git Bash on Windows). User goal / extra instructions: $ARGUMENTS
   private folder; one commit removed it from <branch>; the old files stay in the remote's history). Tickets in flight ⇒ keep
   working on the old board and migrate once none is in flight. Never pass `--force` without the user's go-ahead.
 - BOARD below = the folder `vt board path` prints.
+- `vt usage` shows the Claude account's usage (5-hour session, week) and the usage limit (the user's, default 96 %). A line
+  `OVER THE LIMIT` ⇒ do not dispatch: tell the user the limit and its reset time, start `vt usage wait` in the background and
+  start dispatching when it exits.
 
 ## 1. Plan tickets that can run in parallel
 - Split the goal by code area. Every ticket gets `--area "<files, functions>"`. Same function or algorithm as another ticket, or it
@@ -38,7 +41,8 @@ Linux and in Git Bash on Windows). User goal / extra instructions: $ARGUMENTS
 `vt ticket ready` lists the tickets that can start now (`ready:`) and the ones that wait (`waits: T-5 after T-3 (⏳ DOING …)`).
 For each ready ticket:
 1. `vt session open <ID>` ⇒ `session=… name=<NAME> pid=<PID> label=… auto_name=… model=…` (the ticket's Model line, or `default`). Exit 6 = resource gate closed (RAM/CPU/swap) or every window full (`max` per window: the user's setting): stop opening,
-   keep the rest queued, retry after the next `done` event. Exit 3 with "trust" (rare: only when the folder is not open in a VS Code
+   keep the rest queued, retry after the next `done` event; when the reason starts with `usage:`, pause as for a
+   `vt watch usage` alert (step 3). Exit 3 with "trust" (rare: only when the folder is not open in a VS Code
    window running VixTab) = ask the user; if they agree, re-run with `--trust`. Exit 5 = label already open. Exit 4 = tab problem: with "reload needed", stop opening
    and ask the user to reload the VS Code window (that restarts every session in it, so they choose when); otherwise retry once.
 2. SendMessage to NAME, one line: `Work on ticket <ID> with the vixtab-ticket skill (board: BOARD).` If NAME is
@@ -46,7 +50,7 @@ For each ready ticket:
 3. Keep one line per ticket in your notes: ID, NAME, PID, model. Where the tab opens (a column next to you, or a ticket window) is
    decided by VixTab — do not move tabs around.
 Then start ONE background waiter (run_in_background): `vt wait T-001:PID T-002:PID …`. Do not poll, sleep or Monitor; you are
-notified when it exits. Also start `vt watch ram` in the background once.
+notified when it exits. Also start `vt watch ram` and `vt watch usage` in the background once each.
 
 ## 3. React to events
 The waiter prints ONE OR MORE events, one per line, then exits. Handle every line. Order: first restart the waiter (background)
@@ -60,6 +64,17 @@ for the tickets still running, so nothing is missed while you work; then handle 
   `Continue ticket <ID> with the vixtab-ticket skill (claim with --takeover).`; otherwise `vt ticket release <ID>` and requeue.
 - `vt watch ram` exited with ALERT ⇒ stop opening; tell the most recently opened session that runs a heavy step to pause at a
   safe point; resume when `vt session count` says `open: yes`.
+- `vt watch usage` exited with `ALERT usage: …` ⇒ the Claude account reached the usage limit. Pause, so that no session hits
+  the hard limit in the middle of a step:
+  1. Stop opening tabs and stop the waiter.
+  2. Each ticket whose tab is open: `vt session close <ID> <PID>`, one at a time. Do NOT release it: the ticket stays
+     ⏳ DOING and its worktree keeps the work.
+  3. Handover note (each paused ticket: ID, model; the queue; the reset time) ⇒ `vt board write HANDOVER.md --file <file>`.
+  4. Tell the user in one line: the limit, its reset time, the paused tickets.
+  5. Start `vt usage wait` in the background and do nothing until it exits: it sleeps until the limit resets.
+- `vt usage wait` exited (`below the limit …`) ⇒ resume: for each paused ticket `vt session open <ID>` (step 2) and SendMessage
+  `Continue ticket <ID> with the vixtab-ticket skill (claim with --takeover).`; then restart the waiter and `vt watch usage`,
+  dispatch what is ready, and tell the user.
 - `vt ticket overlap` lists files that two active tickets change, whenever you want a full picture.
 - Sessions lag although RAM and CPU look fine ⇒ `vt session count`: a renderer near 90 % means that window holds too many
   Claude tabs; tell the user (VixTab already spreads new tabs over ticket windows).
@@ -73,6 +88,6 @@ for the tickets still running, so nothing is missed while you work; then handle 
   tell the user.
 
 ## 5. Finish
-All tickets done ⇒ stop your background tasks (the `vt watch ram` you started never exits on its own), `vt procs orphans --kill`,
+All tickets done ⇒ stop your background tasks (`vt watch ram` and `vt watch usage` never exit on their own while all is well), `vt procs orphans --kill`,
 `git pull --ff-only` in your checkout (merges went to the remote), run the project's test command once on the result, then tell
 the user one line per ticket (id, title, result) and the test result.

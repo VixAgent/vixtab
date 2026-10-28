@@ -11,6 +11,7 @@ import { fetchMain } from "../core/mainline.ts";
 import { ancestors } from "../core/proc.ts";
 import { measure } from "../core/resources.ts";
 import { run } from "../core/run.ts";
+import { overLimit, overLine, readUsage, shortLine, usageLimit } from "../core/usage.ts";
 import { native, samePath } from "../core/util.ts";
 import { platform } from "../platform/index.ts";
 import { VERSION } from "../version.ts";
@@ -101,6 +102,15 @@ export async function doctor(argv: string[]): Promise<void> {
   if (c) {
     const gate = await measure({ minFreeMB: c.sessions.minFreeRamMB, maxSwapMB: c.sessions.maxSwapMB, maxCommit: c.sessions.maxCommit, maxCpu: c.sessions.maxCpu });
     add(gate.missing.length ? "WARN" : "OK", "gate", `${gate.line}${gate.missing.length ? " — closed: " + gate.missing.join("; ") : " — new sessions can open"}`);
+  }
+  // The usage guard reads the account's usage itself; unknown = it cannot pause the tickets before the limit.
+  const limit = usageLimit();
+  try {
+    const u = await readUsage();
+    const over = overLimit(u, limit);
+    add(over.length ? "WARN" : "OK", "usage", `${u.account} ${u.plan}: ${shortLine(u)} (limit ${limit} %)${over.length ? " — at the limit: " + over.map((l) => overLine(l, limit)).join("; ") : ""}`, over.length ? "new tabs wait until it resets (vixtab usage wait)" : undefined);
+  } catch (e) {
+    add("WARN", "usage", `unknown: ${(e as Error).message}`, "the usage guard cannot see the limit; Claude Code logged in with a claude.ai plan is needed");
   }
 
   if (has(a, "json")) return void console.log(JSON.stringify(out, null, 1));
