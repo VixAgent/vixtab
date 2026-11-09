@@ -1,0 +1,41 @@
+name: Marketplace
+# Publishes the .vsix files of a GitHub release (the very files users download there, not a rebuild) to the VS Code
+# Marketplace. Trusted publishing: the Marketplace accepts this workflow's GitHub OIDC token (publisher policy for
+# VixAgent/vixtab, marketplace.yml), so no Marketplace token is stored anywhere. Publish the release only after its files
+# are uploaded (create it as a draft, upload, then publish). Run it by hand to retry: platforms already on the Marketplace
+# are skipped.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag whose .vsix files to publish (for example v0.9.2)
+        required: true
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: marketplace
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Download the release's .vsix files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.vsix' --pattern SHA256SUMS --dir dist
+      - name: Check them against SHA256SUMS
+        working-directory: dist
+        run: |
+          ls -l *.vsix
+          grep '\.vsix$' SHA256SUMS | sha256sum --check --strict
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Publish every platform
+        run: npx --yes @vscode/vsce@4.0.0 publish --oidc --skip-duplicate --packagePath dist/*.vsix
