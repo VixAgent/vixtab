@@ -34,8 +34,9 @@ jobs:
         run: |
           ls -l *.vsix
           grep '\.vsix$' SHA256SUMS | sha256sum --check --strict
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
+      # vsce 4.1.0: the first version whose OIDC token exchange sends the api-version the Marketplace requires.
       - name: Publish every platform
-        run: npx --yes @vscode/vsce@4.0.0 publish --oidc --skip-duplicate --packagePath dist/*.vsix
+        run: npx --yes @vscode/vsce@4.1.0 publish --oidc --skip-duplicate --packagePath dist/*.vsix
