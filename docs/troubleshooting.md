@@ -11,8 +11,8 @@ Start with `vixtab doctor` inside the repository: every FAIL line comes with its
 | 3 (other) | the Claude CLI did not start or did not save the session title | the message ends with the CLI screen; check that the Claude Code extension is installed and signed in |
 | 4 + `reload needed` | Claude Code's own tab state is broken ("Webview is disposed") | reload the VS Code window (*Developer: Reload Window*); this restarts every Claude session of that window, so the user chooses when |
 | 4 (other) | the tab did not start its Claude process, or the extension did not answer | retry once; `vixtab tab windows` lists the windows that run the extension |
-| 5 | a Claude tab with this label is already open | pick another label or close that tab |
-| 6 | resource gate closed (RAM, swap, commit, CPU, or `sessions.max`) | keep the ticket queued; `vixtab session count` shows what is missing |
+| 5 | a Claude tab with this label (`<prefix>-<name>`) is already open | close that tab or pick another name; "in another project" = two projects got the same prefix: give one of them its own `sessionPrefix` in `vixtab.config.json` |
+| 6 | resource gate closed (RAM in use above `sessions.maxRam`, 92 % by default; swap, commit, CPU, or `sessions.max`) | keep the ticket queued; `vixtab session count` shows what is missing |
 | 6 + `usage:` | the Claude account's 5-hour session or week is at the usage limit (`vixtab usage limit`, default 96 %) | pause: `vixtab usage wait` sleeps until it resets; or raise the limit |
 
 ## "this board is on origin/main, published with your code"

@@ -8,7 +8,7 @@ import {
 import { TrustNeeded, claudeVersion, createLabeledSession, liveSessionsUnder, registry } from "../core/claude.ts";
 import { isModelName, modelArg, sessionModel } from "../core/board.ts";
 import { syncBoard, ticketOnBoard } from "../core/boardstore.ts";
-import { type Config, isId, loadConfig } from "../core/config.ts";
+import { type Config, isId, labelName, loadConfig, sessionLabel } from "../core/config.ts";
 import { locksOf } from "../core/mainline.ts";
 import { alive } from "../core/proc.ts";
 import { measure } from "../core/resources.ts";
@@ -19,10 +19,13 @@ import { fail, native, norm, samePath, sleep } from "../core/util.ts";
 
 export const HELP = `vixtab session — fresh, labeled Claude Code tabs in VS Code
 
-  session open <label> [--cwd DIR] [--prompt TEXT] [--model M] [--focus] [--here] [--trust] [--no-gate]
-        New session whose tab is named <label>, without stealing focus (unless --focus). No model turn: no tokens. --prompt
+  session open <name> [--cwd DIR] [--prompt TEXT] [--model M] [--focus] [--here] [--trust] [--no-gate]
+        New session whose tab is labeled <prefix>-<name> (VE-T-001), without stealing focus (unless --focus). <prefix> is the
+        project's "sessionPrefix" in vixtab.config.json, by default the initials of the project folder's name
+        (Vixtab-extension → VE) or the first 3 letters of a one-word name (recipes → REC): tabs of different projects never
+        share a label. <name> is usually a ticket id. No model turn: no tokens. --prompt
         pre-fills the input box (it is not sent). --model (sonnet, opus, haiku or an id such as claude-sonnet-5-5): the tab
-        runs on that model; without it, on the Model line of the ticket <label> if it has one, else on the user's default
+        runs on that model; without it, on the Model line of the ticket <name> if it has one, else on the user's default
         (never changed: the model is set for this session only, at the cost of one one-word turn on it; "default" forces the
         default). Where the tab goes follows "tabs" in vixtab.config.json: by default the
         orchestrator's own window until it holds 6 Claude tabs (new columns up to 3, then stacked in the last one), then
@@ -38,7 +41,8 @@ export const HELP = `vixtab session — fresh, labeled Claude Code tabs in VS Co
         user agrees) · 4 tab problem (4 + "reload needed" = Claude Code's tab state is broken: the user must reload the
         window) · 5 label already open · 6 resource gate closed or every window full (queue the ticket, retry later; with
         "usage:" the Claude account is at the usage limit: wait for it with vixtab usage wait)
-  session close <label> [<pid>]    close the tab with exactly this label; with pid, wait until that CLI has exited.
+  session close <name> [<pid>]     close this project's tab labeled <prefix>-<name> (windows of other projects are never
+        searched); with pid, wait until that CLI has exited.
         Tab actions run one at a time; closing a tab can take up to a minute while Claude Code shuts the session down.
         Exit codes: 1 no tab or several tabs with this label · 2 the CLI did not exit · 4 extension did not answer
   session count                    sessions of this repo, the resource gate ("open: yes" or what is missing), the Claude tabs
@@ -47,8 +51,9 @@ export const HELP = `vixtab session — fresh, labeled Claude Code tabs in VS Co
   session list                     live Claude sessions of this repo (pid, name, session id, cwd)
   (every Claude tab of this machine by window, and the closed ones: vixtab tabs)
 
-Resource gate (no fixed session cap by default): free RAM − RAM reserved for sessions opened in the last 90 s ≥ minFreeRamMB,
-swap ≤ maxSwapMB, commit ≤ 85 % (Windows), CPU ≤ 85 %. Configure in vixtab.config.json "sessions" or VIXTAB_* variables.
+Resource gate (no fixed session cap by default): RAM in use ≤ 92 % (maxRam), counting the RAM reserved for sessions opened
+in the last 90 s (or free RAM ≥ minFreeRamMB when that is set), swap ≤ maxSwapMB, commit ≤ 85 % (Windows), CPU ≤ 85 %.
+Configure in vixtab.config.json "sessions" or VIXTAB_* variables.
 The Claude account's 5-hour session and week must also be below the usage limit (vixtab usage limit, default 96 %); an
 unknown usage does not close the gate.`;
 
@@ -66,13 +71,16 @@ export async function gate(c: Config) {
   const n = liveSessionsUnder([c.repo, c.home]).length;
   const reserved = recentOpens(c).length * c.sessions.reserveMB;
   const [g, u] = await Promise.all([
-    measure({ minFreeMB: c.sessions.minFreeRamMB, maxSwapMB: c.sessions.maxSwapMB, maxCommit: c.sessions.maxCommit, maxCpu: c.sessions.maxCpu }, reserved),
+    measure({ minFreeMB: c.sessions.minFreeRamMB, maxRam: c.sessions.maxRam, maxSwapMB: c.sessions.maxSwapMB, maxCommit: c.sessions.maxCommit, maxCpu: c.sessions.maxCpu }, reserved),
     usageGate(),
   ]);
   if (c.sessions.max > 0 && n >= c.sessions.max) g.missing.unshift(`sessions ${n} ≥ max ${c.sessions.max}`);
   g.missing.push(...u.missing);
   return { ...g, line: `sessions=${n}${c.sessions.max > 0 ? "/" + c.sessions.max : ""} ${g.line} ${u.line}` };
 }
+
+/** A window of this project: it has the repository open, or the folder a tab was opened in. */
+const ofProject = (c: Config, win: number, cwd?: string) => windowInfo(win)?.folders.some((f) => samePath(f, c.repo) || (!!cwd && samePath(f, cwd))) ?? false;
 
 /** The most Claude tabs VixTab puts in a window: "tabs" in vixtab.config.json (or VIXTAB_TABS_*) when set, else the window's own setting. */
 export const capOf = (c: Config, kind: string | undefined, setting: number) => (kind === "tickets" ? c.tabs.perWindowMax : c.tabs.inWindowMax) ?? setting;
@@ -161,20 +169,22 @@ export async function session(argv: string[]): Promise<void> {
       return;
     }
     case "open": {
-      const label = a._[0] ?? fail("usage: vixtab session open <label>", 2);
-      if ([...label].length > 25 || !/^[\p{L}\p{N} ._#-]+$/u.test(label)) fail("label: at most 25 letters, digits, spaces or . _ # -", 2);
       const c = loadConfig();
+      // The label is <prefix>-<name> (VE-T-001): tabs of other projects never share a label with this project's.
+      const name = labelName(c, a._[0] ?? fail("usage: vixtab session open <name>", 2));
+      const label = sessionLabel(c, name);
+      if ([...label].length > 25 || !/^[\p{L}\p{N} ._#-]+$/u.test(label)) fail(`label ${label}: at most 25 letters, digits, spaces or . _ # - (the project prefix included)`, 2);
       const cwd = norm(str(a, "cwd") ?? c.repo);
       if (!existsSync(cwd)) fail(`no such folder: ${cwd}`, 2);
-      // --model, else the Model line of the ticket named <label> (on the board), else the user's default.
+      // --model, else the Model line of the ticket named <name> (on the board), else the user's default.
       const flag = modelArg(a);
       let ticketText: string | null = null;
-      if (flag === undefined && isId(c, label)) {
+      if (flag === undefined && isId(c, name)) {
         syncBoard(c);
-        ticketText = ticketOnBoard(c, label)?.text ?? null;
+        ticketText = ticketOnBoard(c, name)?.text ?? null;
       }
       const model = sessionModel(flag, ticketText);
-      if (model && !isModelName(model)) fail(`the Model line of ${label} is not a model name: ${model}`, 2);
+      if (model && !isModelName(model)) fail(`the Model line of ${name} is not a model name: ${model}`, 2);
       const L = locksOf(c);
       let release: () => void;
       try {
@@ -187,9 +197,10 @@ export async function session(argv: string[]): Promise<void> {
           const g = await gate(c);
           if (g.missing.length) fail(`NOT OPENED: ${g.line} — ${g.missing.join("; ")}`, 6);
         }
-        // Labels must be unique across every window: close finds the tab by label.
+        // Labels must be unique across every window: close finds the tab by label, SendMessage the session by name.
         const holders = await windowsWithLabel(label);
-        if (holders.length) fail(`a Claude tab labeled "${label}" is already open (window ${holders.join(", ")})`, 5);
+        if (holders.length)
+          fail(`a Claude tab labeled "${label}" is already open (window ${holders.join(", ")})${holders.some((w) => !ofProject(c, w)) ? ` in another project: give one of them its own "sessionPrefix" in vixtab.config.json` : ""}`, 5);
         const ownFolder = (win: number) => {
           const info = windowInfo(win);
           if (info && !info.folders.some((x) => samePath(x, cwd)))
@@ -238,15 +249,26 @@ export async function session(argv: string[]): Promise<void> {
       return;
     }
     case "close": {
-      const label = a._[0] ?? fail("usage: vixtab session close <label> [<pid>]", 2);
+      const c = loadConfig();
+      const name = labelName(c, a._[0] ?? fail("usage: vixtab session close <name> [<pid>]", 2));
       const pid = Number(a._[1] ?? 0);
-      // The tab may live in the orchestrator's window or in any ticket window.
-      const where = process.env.VIXTAB_EXT_HOST_PID ? [Number(process.env.VIXTAB_EXT_HOST_PID)] : await windowsWithLabel(label);
-      if (where.length !== 1) fail(`NOT CLOSED: ${where.length ? `several windows (${where.join(", ")}) have` : "no window has"} a Claude tab labeled "${label}"`, 1);
-      const r = await send("close", { label }, 240_000, where[0]);
+      const log = readTabLog();
+      // The tab may live in the orchestrator's window or in any ticket window — of THIS project only: another project may
+      // show a tab with the same label. A tab opened before labels had the project prefix (0.9.0 and older) has the bare name.
+      const pinned = Number(process.env.VIXTAB_EXT_HOST_PID ?? 0);
+      const find = async (l: string) => (pinned ? [pinned] : (await windowsWithLabel(l)).filter((w) => ofProject(c, w, openTabByLabel(log, l)?.cwd)));
+      let label = sessionLabel(c, name);
+      let where = await find(label);
+      if (!pinned && !where.length && name !== label) {
+        const bare = await find(name);
+        if (bare.length) [label, where] = [name, bare];
+      }
+      if (where.length !== 1) fail(`NOT CLOSED: ${where.length ? `several windows (${where.join(", ")}) have` : "no window of this project has"} a Claude tab labeled "${label}"`, 1);
+      let r = await send("close", { label }, 240_000, where[0]);
+      if (pinned && !r.closed && !r.matches && name !== label) r = await send("close", { label: (label = name) }, 240_000, pinned);
       if (!r.closed) fail(`NOT CLOSED: ${r.matches} Claude tabs are labeled "${label}" (need exactly 1)`, 1);
       // History for the panel (vixtab tabs): the ticket status at closing time is the final one.
-      const opened = openTabByLabel(readTabLog(), label);
+      const opened = openTabByLabel(log, label);
       if (opened) logTab({ ev: "close", at: Date.now(), label, sessionId: opened.sessionId, status: ticketStatus(opened.cwd, label) });
       if (!pid) return void console.log(`Closed "${label}".`);
       for (let i = 0; i < 60; i++, await sleep(500)) if (!alive(pid)) return void console.log(`Closed "${label}" (pid ${pid} exited).`);

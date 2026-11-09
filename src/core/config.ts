@@ -28,7 +28,10 @@ export type Config = {
   test: string;
   /** Files that many tickets touch: overlap there is expected, rebase carefully instead of queueing. */
   hotFiles: string[];
-  sessions: { max: number; minFreeRamMB: number; maxSwapMB: number; maxCommit: number; maxCpu: number; reserveMB: number };
+  /** maxRam: new sessions while RAM in use ≤ this share (minFreeRamMB is the rest); null when minFreeRamMB is set explicitly. */
+  sessions: { max: number; minFreeRamMB: number; maxRam: number | null; maxSwapMB: number; maxCommit: number; maxCpu: number; reserveMB: number };
+  /** Starts the tab label of every session of this project ("VE-T-001"), so a tab of another project never matches by name. */
+  sessionPrefix: string;
   /**
    * Where ticket tabs go. Every Claude tab of ONE VS Code window runs in that window's single renderer thread: 14 visible columns
    * drove it to 102 % of a core and froze every session, and even hidden (stacked) tabs keep running — 7 of them reached 91 %.
@@ -92,6 +95,10 @@ export function loadConfig(cwd = process.cwd()): Config {
     const x = num(v, typeof d === "number" ? d : NaN);
     return x > 0 ? x : null;
   };
+  const fixedFree = optNum(env.VIXTAB_MIN_FREE_RAM_MB, s.minFreeRamMB);
+  const ram = num(env.VIXTAB_MAX_RAM, s.maxRam ?? 0.92), maxRam = ram > 1 ? ram / 100 : ram; // 0.92 or 92
+  const sessionPrefix = env.VIXTAB_SESSION_PREFIX || raw.sessionPrefix || folderPrefix(basename(repo));
+  if (!/^[A-Za-z0-9]{1,8}$/.test(sessionPrefix)) fail(`sessionPrefix must be 1 to 8 letters or digits, got '${sessionPrefix}'`, 2);
   return {
     repo,
     configFile,
@@ -107,10 +114,12 @@ export function loadConfig(cwd = process.cwd()): Config {
     setup: raw.setup ?? "",
     test: raw.test ?? "",
     hotFiles: raw.hotFiles ?? [],
+    sessionPrefix,
     sessions: {
       // 0 = no fixed cap: the resource gate decides how many sessions run.
       max: num(env.VIXTAB_MAX_SESSIONS, s.max ?? 0),
-      minFreeRamMB: num(env.VIXTAB_MIN_FREE_RAM_MB, s.minFreeRamMB ?? clamp(Math.round(totalMB / 8), 4096, 16384)),
+      minFreeRamMB: fixedFree ?? Math.round(totalMB * (1 - maxRam)),
+      maxRam: fixedFree ? null : maxRam,
       maxSwapMB: num(env.VIXTAB_MAX_SWAP_MB, s.maxSwapMB ?? clamp(Math.round(totalMB / 4), 4096, 16384)),
       maxCommit: num(env.VIXTAB_MAX_COMMIT, s.maxCommit ?? 0.85),
       maxCpu: num(env.VIXTAB_MAX_CPU, s.maxCpu ?? 0.85),
@@ -132,6 +141,23 @@ export function loadConfig(cwd = process.cwd()): Config {
     },
   };
 }
+
+/**
+ * Default session prefix: the initials of the words of the project folder's name (Vixtab-extension → VE, my-web-app → MWA), or
+ * the first 3 letters of a one-word name (recipes → REC). Accents are dropped.
+ */
+export function folderPrefix(folder: string): string {
+  const words = folder.normalize("NFD").replace(/\p{M}/gu, "").replace(/\u0111/gi, "d").split(/[^A-Za-z0-9]+/).filter(Boolean);
+  const p = words.length > 1 ? words.map((w) => w[0]).join("").slice(0, 4) : (words[0] ?? "").slice(0, 3);
+  return p.toUpperCase() || "VT";
+}
+/** The tab label of a session: the project's prefix, "-", the name. A name that already starts with the prefix is kept. */
+export function sessionLabel(c: Config, name: string): string {
+  const p = `${c.sessionPrefix}-`;
+  return name.startsWith(p) && !isId(c, name) ? name : p + name;
+}
+/** The name inside a tab label of this project (T-001 for VE-T-001); other labels as they are. */
+export const labelName = (c: Config, label: string) => (label.startsWith(`${c.sessionPrefix}-`) && label.length > c.sessionPrefix.length + 1 ? label.slice(c.sessionPrefix.length + 1) : label);
 
 /** Ticket ids look like T-001 (prefix + at least `digits` digits). */
 export const idPattern = (c: Config) => `${c.prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\d{${c.digits},}`;

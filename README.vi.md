@@ -23,7 +23,10 @@ worktree git riêng và vào nhánh `main` qua hàng đợi gộp có chạy tes
 
 - **Điều phối tự động, tiết kiệm ngữ cảnh.** Phiên điều phối không tự làm phiếu. Mỗi phiếu chạy trên một phiên mới, ngữ cảnh nhỏ,
   xong thì đóng. Phiên điều phối chỉ đọc kết quả một dòng và chờ bằng tiến trình nền, nên không tốn token khi không có việc.
-- **Mỗi phiếu một tab, mỗi cửa sổ một renderer.** Nhãn tab là mã phiếu, tab mở không giật focus. Cửa sổ của phiên điều phối
+- **Mỗi phiếu một tab, mỗi cửa sổ một renderer.** Nhãn tab gồm tiền tố của dự án và mã phiếu (`VE-T-001` với thư mục
+  `Vixtab-extension`), nên tab của 2 dự án không bao giờ trùng tên và VixTab không đóng nhầm tab của dự án khác. Tiền tố mặc
+  định là chữ cái đầu các từ trong tên thư mục (hoặc 3 chữ cái đầu nếu tên chỉ có 1 từ), đổi được bằng `sessionPrefix` trong
+  `vixtab.config.json`. Tab mở không giật focus. Cửa sổ của phiên điều phối
   được dùng trước, tới 6 tab Claude (3 cột, sau đó xếp chồng vào cột cuối). Chỉ khi đầy mới xếp chồng sang **cửa sổ phiếu** (cửa
   sổ VS Code riêng, tối đa 6 tab Claude; chỉ mở cửa sổ mới khi các cửa sổ phiếu đang có đều đầy). Con số 6 đổi được trong
   *Settings ▸ VixTab: Max Tabs Per Window*. Mỗi lần mở tab, VixTab đếm lại số tab Claude mà từng cửa sổ đang có ngay lúc đó,
@@ -45,8 +48,8 @@ worktree git riêng và vào nhánh `main` qua hàng đợi gộp có chạy tes
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/dependencies-dark.svg"><img src="docs/images/dependencies.svg" alt="Các phiên chờ nhau theo ràng buộc: phiếu phụ thuộc, câu hỏi, tệp dùng chung, cổng tài nguyên" width="100%"></picture>
 
-- **Cổng tài nguyên thay cho trần số phiên.** Chỉ mở tab mới khi RAM trống (đã trừ phần dành cho các tab vừa mở trong 90 giây),
-  swap, bộ nhớ cam kết (Windows) và CPU đều còn chỗ. Lượt nặng (trọn bộ test, E2E, dựng, trình duyệt) đi qua các ô co giãn có
+- **Cổng tài nguyên thay cho trần số phiên.** Chỉ mở tab mới khi RAM đang dùng không quá 92 % (tính cả phần dành cho các tab vừa
+  mở trong 90 giây; đổi bằng `sessions.maxRam`), đồng thời swap, bộ nhớ cam kết (Windows) và CPU đều còn chỗ. Lượt nặng (trọn bộ test, E2E, dựng, trình duyệt) đi qua các ô co giãn có
   trần bộ nhớ: cgroup trên Linux, Job Object trên Windows.
 - **Canh hạn mức gói Claude.** VixTab tự đọc hạn mức của tài khoản như lệnh `/usage` của Claude Code, không cần cài thêm công
   cụ nào. Khi phiên 5 giờ hoặc hạn mức tuần chạm ngưỡng (mặc định 96 %, chỉnh ở *VixTab: Usage Limit* hoặc

@@ -100,7 +100,7 @@ export async function doctor(argv: string[]): Promise<void> {
   const cap = platform.memoryCapKind();
   add(cap.startsWith("none") ? "WARN" : "OK", "heavy cap", cap);
   if (c) {
-    const gate = await measure({ minFreeMB: c.sessions.minFreeRamMB, maxSwapMB: c.sessions.maxSwapMB, maxCommit: c.sessions.maxCommit, maxCpu: c.sessions.maxCpu });
+    const gate = await measure({ minFreeMB: c.sessions.minFreeRamMB, maxRam: c.sessions.maxRam, maxSwapMB: c.sessions.maxSwapMB, maxCommit: c.sessions.maxCommit, maxCpu: c.sessions.maxCpu });
     add(gate.missing.length ? "WARN" : "OK", "gate", `${gate.line}${gate.missing.length ? " — closed: " + gate.missing.join("; ") : " — new sessions can open"}`);
   }
   // The usage guard reads the account's usage itself; unknown = it cannot pause the tickets before the limit.

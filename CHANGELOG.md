@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.9.1 — 2026-11-09
+
+- **Session labels carry the project's prefix.** `vixtab session open T-001` now labels the tab `VE-T-001` in a folder named
+  `Vixtab-extension`: the prefix is `sessionPrefix` in `vixtab.config.json` (or `VIXTAB_SESSION_PREFIX`), by default the
+  initials of the folder name's words (`my-web-app` → `MWA`) or the first 3 letters of a one-word name (`recipes` → `REC`).
+  Two projects with a ticket `T-001` no longer open tabs with the same name, and `vixtab session close <id>` only searches the
+  windows of its own project, so it never closes another project's tab. Pass the bare id as before (`session open T-001`,
+  `session close T-001`); a full label is accepted too, and tabs opened by 0.9.0 (bare `T-001`) are still found. The
+  *Start orchestrator* button opens `VE-Orchestrator`. Exit 5 says when the label is held by another project.
+- **RAM gate as a share of RAM in use: 92 %.** A new tab opens while RAM in use, counting the RAM reserved for tabs opened in
+  the last 90 s, stays at or below `sessions.maxRam` (default 0.92; `92` works too; `VIXTAB_MAX_RAM`). It replaces the old
+  default of free RAM ≥ total/8 (4–16 GB); an explicit `sessions.minFreeRamMB` still sets a fixed amount instead. The reason
+  reads `RAM in use 93% > 92%`, and the gate line shows `ram=<n>%`.
+
 ## 0.9.0 — 2026-10-29
 
 - **Usage guard for your Claude plan.** VixTab reads the usage of the account Claude Code is logged in with, the numbers of

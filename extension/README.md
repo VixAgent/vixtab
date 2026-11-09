@@ -44,7 +44,8 @@ Tickets run in parallel by default. A session waits only for a real reason, and 
   the orchestrator wakes up, answers, or asks you when only you can, and the session continues.
 - **Shared files.** Two tickets that change the same file still run side by side. When the first one lands, the second is told
   to rebase and re-run its tests. `vixtab ticket overlap` shows every file shared by active tickets.
-- **Machine room.** No fixed session cap: a new tab opens only when free RAM, swap, commit charge and CPU have room. Otherwise
+- **Machine room.** No fixed session cap: a new tab opens only while RAM in use stays at or below 92 % and swap, commit charge
+  and CPU have room. Otherwise
   the ticket waits in the queue and starts as soon as a session closes.
 - **A ticket that needs another ticket's result** can wait for it by itself (`vixtab wait --as T-005 T-003`) and continue when
   it lands.
@@ -68,7 +69,9 @@ Tickets run in parallel by default. A session waits only for a real reason, and 
 
 ![How VixTab lays out the tabs](https://raw.githubusercontent.com/VixAgent/vixtab/main/docs/images/layout-flow.png)
 
-Each tab is labeled with its ticket id and opens without stealing your focus. All Claude tabs of one VS Code window share one
+Each tab is labeled with the project's prefix and its ticket id (`VE-T-001` in a folder named `Vixtab-extension`), so tabs of
+two projects never share a name and VixTab never closes another project's tab; it opens without stealing your focus. All
+Claude tabs of one VS Code window share one
 renderer thread: on a 44-thread workstation, 14 visible columns pushed it to 102 % of a core and every session froze. So the
 orchestrator's own window is used first — up to 6 Claude tabs (3 columns, then stacked) — and only then do tabs stack in **ticket windows**, separate VS Code
 windows with six Claude tabs each. Change the 6 in *Settings ▸ VixTab: Max Tabs Per Window*. VixTab counts the Claude tabs of

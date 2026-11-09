@@ -336,15 +336,18 @@ async function orchestrate() {
     vscode.window.showErrorMessage(`VixTab: could not install the Claude Code skills for ${folder} (is it a git repository?) — see the VixTab output.`);
     return;
   }
-  const taken = new Set(vscode.window.tabGroups.all.flatMap((g) => g.tabs).filter(isClaudeTab).map((t) => t.label));
-  let label = "Orchestrator";
-  for (let i = 2; taken.has(label); i++) label = `Orchestrator ${i}`;
+  // The CLI adds the project's session prefix (VE-Orchestrator); exit 5 = that label is open already: try the next number.
+  let name = "Orchestrator";
   const prompt = vscode.workspace.getConfiguration("vixtab").get("orchestratorPrompt") || "/vixtab-orchestrate ";
   const open = (trust) =>
-    vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `VixTab: opening "${label}"…` }, () =>
-      runCli(["session", "open", label, "--cwd", folder, "--here", "--focus", "--no-gate", "--prompt", prompt, ...(trust ? ["--trust"] : [])], folder),
+    vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `VixTab: opening "${name}"…` }, () =>
+      runCli(["session", "open", name, "--cwd", folder, "--here", "--focus", "--no-gate", "--prompt", prompt, ...(trust ? ["--trust"] : [])], folder),
     );
   let r = await open(false);
+  for (let i = 2; r.code === 5 && i <= 9; i++) {
+    name = `Orchestrator ${i}`;
+    r = await open(false);
+  }
   if (r.code === 3 && /^trust:/m.test(r.text)) {
     const yes = "Trust folder and continue";
     const ans = await vscode.window.showWarningMessage(
@@ -360,6 +363,7 @@ async function orchestrate() {
     vscode.window.showErrorMessage(`VixTab: could not open the orchestrator tab (exit ${r.code}) — see the VixTab output.`);
     return;
   }
+  const label = (/ label=(.+?) auto_name=/.exec(r.stdout) || [])[1] || name;
   vscode.window.setStatusBarMessage(`VixTab: "${label}" is ready — type your goal after ${prompt.trim()} and press Enter.`, 15000);
 }
 

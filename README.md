@@ -31,7 +31,8 @@ the ticket is done. Every ticket works in its own git worktree and lands on `mai
 - **Context-saving orchestration.** The orchestrator never implements tickets. Each ticket gets a new session that starts
   small and ends when the ticket is done; the orchestrator reads one-line results and waits on a background process, so it
   spends no tokens while nothing happens. [How it works ↓](#how-the-orchestration-saves-context)
-- **A tab per ticket, and a renderer per window.** Each tab is labeled with the ticket id and opens without stealing focus:
+- **A tab per ticket, and a renderer per window.** Each tab is labeled with the project's prefix and the ticket id
+  (`VE-T-001` in `Vixtab-extension`), so a tab of another project never has the same name, and opens without stealing focus:
   in the orchestrator's own window first (up to 6 Claude tabs: 3 columns, then stacked), then stacked in **ticket windows** — separate VS Code
   windows, six Claude tabs each — because all tabs of one window share one renderer thread. The 6 is the setting
   *VixTab: Max Tabs Per Window*; the tabs are counted each time one opens. Creating a tab runs no model turn:
@@ -45,8 +46,8 @@ the ticket is done. Every ticket works in its own git worktree and lands on `mai
   claimed before T-003 is done, and the orchestrator is woken with `ready T-005` the moment it can start; a session that asks a
   question waits for the answer; two tickets on the same file both run, and the later one is told to rebase when the first
   lands; tickets beyond the machine's room wait in the queue. [How ↓](#sessions-wait-for-each-other-only-when-they-must)
-- **Resource gates instead of a fixed session cap.** A new tab opens only when free RAM (minus RAM reserved for tabs opened in
-  the last 90 s), swap, commit charge (Windows) and CPU have room. Heavy steps (full test suites, E2E, builds, browsers) go
+- **Resource gates instead of a fixed session cap.** A new tab opens only while RAM in use stays at or below 92 % (counting
+  RAM reserved for tabs opened in the last 90 s) and swap, commit charge (Windows) and CPU have room. Heavy steps (full test suites, E2E, builds, browsers) go
   through elastic, memory-capped slots — a cgroup scope on Linux, a Job Object on Windows.
 - **A usage guard for your Claude plan.** VixTab reads the account's usage itself, like Claude Code's `/usage` (nothing else to
   install). When the 5-hour session or the week reaches your limit (default 96 %), the orchestrator closes its ticket tabs
@@ -254,7 +255,8 @@ is your decision, and VixTab never does it.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/gates-dark.svg"><img src="docs/images/gates.svg" alt="Resource gates: tabs open only when RAM, swap, commit and CPU have room; heavy steps use elastic capped slots" width="100%"></picture>
 
-Defaults scale with the machine: minimum free RAM = total/8 (4–16 GB), maximum swap = total/4 (4–16 GB), commit and CPU 85 %,
+Defaults scale with the machine: RAM in use at most 92 % (`maxRam`: free RAM at least 8 % of the total; `minFreeRamMB`
+replaces it with a fixed amount), maximum swap = total/4 (4–16 GB), commit and CPU 85 %,
 1 GB reserved per tab opened in the last 90 s. Heavy slots = max(2, logical CPUs / 4), each run capped at 6 GB unless
 `--mem` says otherwise; a run starts only if free RAM minus the caps of runs that started in the last 90 s leaves its own
 cap + 4 GB. `vixtab session count` shows the gate; `vixtab watch ram` alerts the orchestrator before the machine swaps.
@@ -291,7 +293,7 @@ login; reading costs no usage. Nothing else is needed, in any project.
 | `vixtab ticket done <id>` · `release <id>` | ✅ DONE + clean-up · give the ticket back |
 | `vixtab ticket ask <id> "<question>"` · `answer <id> "<answer>"` | ❓ ASK ↔ ⏳ DOING, recorded in the ticket |
 | `vixtab ticket overlap [<id>…]` | files changed by two or more active tickets |
-| `vixtab session open <label> [--model <m>]` · `close <label> [<pid>]` · `count` · `list` | labeled Claude tabs, resource-gated; `--model` (or the ticket's Model line) picks the model for that tab only |
+| `vixtab session open <name> [--model <m>]` · `close <name> [<pid>]` · `count` · `list` | Claude tabs labeled `<prefix>-<name>`, resource-gated; `close` only searches this project's windows; `--model` (or the ticket's Model line) picks the model for that tab only |
 | `vixtab tabs [--json] [--load]` · `tabs clear` | every Claude tab of this machine by VS Code window: state and for how long, ticket status, model, renderer load (`--load`); the tabs VixTab opened that have closed |
 | `vixtab tab layout` · `even` · `join` · `open <session>` · `close <label>` · `windows` · `new-window` | low-level tab control, ticket windows |
 | `vixtab wait [--as <name>] <id>[:<pid>] …` | sleep until `done` / `ready` / `ask` / `rebase` / `gone` events (any session can use it) |
@@ -318,13 +320,19 @@ wins, for a team that commits one on purpose; only that one can set `"home"`, ot
   "ports": { "base": 4000 },
   "env": { "VITE_PORT": "{port}" },
   "hotFiles": ["src/types.ts"],
+  "sessionPrefix": "APP",
   "tabs": { "mode": "auto", "columnsMax": 3 },
-  "sessions": { "max": 0, "minFreeRamMB": 8192, "maxSwapMB": 8192, "maxCpu": 0.85, "reserveMB": 1024 },
+  "sessions": { "max": 0, "maxRam": 0.92, "maxSwapMB": 8192, "maxCpu": 0.85, "reserveMB": 1024 },
   "heavy": { "slots": 4, "mem": "6G", "headroomMB": 4096 }
 }
 ```
 
-Environment overrides: `VIXTAB_HOME`, `VIXTAB_REPO`, `VIXTAB_MAX_SESSIONS`, `VIXTAB_MIN_FREE_RAM_MB`, `VIXTAB_MAX_SWAP_MB`,
+`sessionPrefix` starts every tab label of the project (`APP-T-001`, `APP-Orchestrator`); without it, VixTab takes the
+initials of the folder's name (`Vixtab-extension` → `VE`, `my-web-app` → `MWA`) or the first 3 letters of a one-word name
+(`recipes` → `REC`). Give it explicitly when two projects would get the same prefix. `session close` only searches windows of
+its own project, so it never closes another project's tab even then.
+
+Environment overrides: `VIXTAB_HOME`, `VIXTAB_REPO`, `VIXTAB_SESSION_PREFIX`, `VIXTAB_MAX_SESSIONS`, `VIXTAB_MAX_RAM`, `VIXTAB_MIN_FREE_RAM_MB`, `VIXTAB_MAX_SWAP_MB`,
 `VIXTAB_MAX_CPU`, `VIXTAB_MAX_COMMIT`, `VIXTAB_HEAVY_SLOTS`, `VIXTAB_HEAVY_MEM`, `VIXTAB_TAB_MODE`, `VIXTAB_TABS_IN_WINDOW`,
 `VIXTAB_TABS_PER_WINDOW`, `VIXTAB_CLAUDE_BIN`, `VIXTAB_EXT_HOST_PID` (pin every tab action to one window),
 `VIXTAB_ORCHESTRATOR_WINDOW` (the orchestrator's window when you drive VixTab from outside VS Code; the tabs policy still applies).

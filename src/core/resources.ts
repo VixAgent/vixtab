@@ -1,6 +1,6 @@
 // Resource gates. Instead of a fixed session cap, a new session (or heavy run) starts only when the machine has room:
 // free RAM, swap, commit charge (Windows) and CPU — minus what recently started work will soon use but has not taken yet.
-import { cpus } from "node:os";
+import { cpus, totalmem } from "node:os";
 import { platform } from "../platform/index.ts";
 import { sleep } from "./util.ts";
 
@@ -22,18 +22,29 @@ export async function cpuBusy(ms = 1500): Promise<number> {
 
 export type Gate = { line: string; missing: string[]; freeMB: number; cpu: number };
 
-/** Measure the machine against limits. `reservedMB` = RAM promised to work that started moments ago. */
-export async function measure(limits: { minFreeMB: number; maxSwapMB?: number; maxCommit: number; maxCpu: number; needCommitMB?: number }, reservedMB = 0): Promise<Gate> {
+/** Share of RAM in use (0…100) when `freeMB` is free. */
+export const ramInUse = (freeMB: number) => Math.round(100 * (1 - freeMB / (totalmem() / 1048576)));
+
+/**
+ * Measure the machine against limits. `reservedMB` = RAM promised to work that started moments ago. `maxRam` (0…1) only words
+ * the RAM reason as a share of RAM in use; minFreeMB is what is checked.
+ */
+export async function measure(
+  limits: { minFreeMB: number; maxRam?: number | null; maxSwapMB?: number; maxCommit: number; maxCpu: number; needCommitMB?: number },
+  reservedMB = 0,
+): Promise<Gate> {
   const free = platform.freeRamMB(), effective = free - reservedMB;
   const swap = limits.maxSwapMB !== undefined ? platform.swapUsedMB() : 0;
   const commit = platform.commitMB();
   const cpu = await cpuBusy();
   const missing: string[] = [];
-  if (effective < limits.minFreeMB) missing.push(`free RAM ${effective}MB${reservedMB ? ` (${free} − ${reservedMB} reserved)` : ""} < ${limits.minFreeMB}MB`);
+  const reserved = reservedMB ? ` (${free} − ${reservedMB} reserved)` : "";
+  if (effective < limits.minFreeMB)
+    missing.push(limits.maxRam ? `RAM in use ${ramInUse(effective)}% > ${Math.round(limits.maxRam * 100)}% (free ${effective}MB${reserved})` : `free RAM ${effective}MB${reserved} < ${limits.minFreeMB}MB`);
   if (limits.maxSwapMB !== undefined && swap > limits.maxSwapMB) missing.push(`swap ${swap}MB > ${limits.maxSwapMB}MB`);
   if (commit && commit.used + (limits.needCommitMB ?? 0) > commit.limit * limits.maxCommit)
     missing.push(`commit ${commit.used}/${commit.limit}MB > ${Math.round(limits.maxCommit * 100)}%`);
   if (cpu > limits.maxCpu) missing.push(`CPU ${Math.round(cpu * 100)}% > ${Math.round(limits.maxCpu * 100)}%`);
-  const line = `free_ram=${free}MB${reservedMB ? ` reserved=${reservedMB}MB` : ""}${limits.maxSwapMB !== undefined ? ` swap=${swap}MB` : ""}${commit ? ` commit=${commit.used}/${commit.limit}MB` : ""} cpu=${Math.round(cpu * 100)}%`;
+  const line = `free_ram=${free}MB ram=${ramInUse(free)}%${reservedMB ? ` reserved=${reservedMB}MB` : ""}${limits.maxSwapMB !== undefined ? ` swap=${swap}MB` : ""}${commit ? ` commit=${commit.used}/${commit.limit}MB` : ""} cpu=${Math.round(cpu * 100)}%`;
   return { line, missing, freeMB: free, cpu };
 }

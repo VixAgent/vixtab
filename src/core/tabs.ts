@@ -6,7 +6,7 @@ import { basename, dirname, join } from "node:path";
 import type { Row } from "./board.ts";
 import { isLegacy, readBoard } from "./boardstore.ts";
 import { CACHE } from "./bridge.ts";
-import { type Config, isId, loadConfig } from "./config.ts";
+import { type Config, isId, labelName, loadConfig } from "./config.ts";
 import { fmtMB, norm } from "./util.ts";
 
 export const tabLogFile = () => join(CACHE, "tabs.jsonl");
@@ -190,7 +190,8 @@ export function projectResolver(): (cwd: string) => Project {
           repo: conf.repo,
           name: basename(conf.repo),
           ticket: (label) => {
-            if (!isId(conf, label)) return null;
+            const id = labelName(conf, label); // VE-T-001 → T-001 (a bare T-001: a tab opened by 0.9.0 or older)
+            if (!isId(conf, id)) return null;
             if (rows === undefined) {
               try {
                 isLegacy(conf, true); // the overview runs every few seconds: no legacy-board warning
@@ -199,7 +200,7 @@ export function projectResolver(): (cwd: string) => Project {
                 rows = null;
               }
             }
-            const r = rows?.find((x) => x.id === label);
+            const r = rows?.find((x) => x.id === id);
             return r ? { id: r.id, status: r.status, title: r.title } : null;
           },
         };
