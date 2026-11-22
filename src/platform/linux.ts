@@ -26,6 +26,54 @@ export const linux: Platform = {
   },
   commitMB: () => null, // Linux overcommits; the OOM killer, not the commit limit, is what bites
 
+  startedAt(pid) {
+    const k = this.startKey(pid);
+    return k ? Date.now() - Number(readFileSync("/proc/uptime", "utf8").split(" ")[0]) * 1000 + k : 0;
+  },
+
+  startKey(pid) {
+    try {
+      const st = readFileSync(`/proc/${pid}/stat`, "utf8");
+      return Number(st.slice(st.lastIndexOf(")") + 2).split(" ")[19]) * 10; // clock ticks (USER_HZ 100) since boot, in ms
+    } catch {
+      return 0;
+    }
+  },
+
+  parents() {
+    const m = new Map<number, number>();
+    for (const d of readdirSync("/proc")) {
+      if (!/^\d+$/.test(d)) continue;
+      try {
+        const st = readFileSync(`/proc/${d}/stat`, "utf8");
+        m.set(Number(d), Number(st.slice(st.lastIndexOf(")") + 2).split(" ")[1]));
+      } catch {}
+    }
+    return m;
+  },
+
+  ancestorPids(pid, parents?: Map<number, number>) {
+    const ppid = (p: number) => {
+      if (parents) return parents.get(p) ?? 0;
+      try {
+        const st = readFileSync(`/proc/${p}/stat`, "utf8");
+        return Number(st.slice(st.lastIndexOf(")") + 2).split(" ")[1]);
+      } catch {
+        return 0;
+      }
+    };
+    const out: number[] = [];
+    for (let p = pid, s = this.startKey(pid); out.length < 64; ) {
+      const pp = ppid(p);
+      if (!pp || pp === p || out.includes(pp)) break;
+      const ps = this.startKey(pp);
+      if (!ps || (s && ps > s)) break;
+      out.push(pp);
+      [p, s] = [pp, ps];
+    }
+    return out;
+  },
+
   processes(): Proc[] {
     const out: Proc[] = [];
     const hz = 100;

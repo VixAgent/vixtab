@@ -1,6 +1,8 @@
 // VixTab VS Code extension.
 // 1. Bridge: executes tab commands that the `vixtab` CLI writes to ~/.cache/vixtab/commands/<pid>-<id>.cmd.json (pid = this
-//    window's extension host), answering in <pid>-<id>.result.json. The window registers in ~/.cache/vixtab/windows/<pid>.json.
+//    window's extension host), answering in <pid>-<id>.result.json. The window registers in ~/.cache/vixtab/windows/<pid>.json
+//    and keeps its Claude tabs (count, labels, layout, its tab cap) in ~/.cache/vixtab/window-tabs/<pid>.json, rewritten at
+//    every tab change and every 15 s, so the CLI counts tabs without asking the window.
 // 2. UI: status bar button and commands to start an orchestrator tab, set up the CLI and the Claude Code skills (every project, or per repository), run the doctor,
 //    and create a playground. The CLI ships inside this extension (bin/), built for the platform of the .vsix.
 const vscode = require("vscode");
@@ -13,6 +15,7 @@ const CACHE = path.join(os.homedir(), ".cache", "vixtab");
 const COMMANDS = path.join(CACHE, "commands");
 const WINDOWS = path.join(CACHE, "windows");
 const WINDOW_FILE = path.join(WINDOWS, `${process.pid}.json`);
+const TABS_FILE = path.join(CACHE, "window-tabs", `${process.pid}.json`);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EXE = process.platform === "win32" ? ".exe" : "";
 const INSTALLED = path.join(os.homedir(), ".vixtab", "bin", `vixtab${EXE}`);
@@ -62,6 +65,7 @@ async function openSession(args) {
     return await openSessionNow(args);
   } finally {
     opening--;
+    publishTabs();
   }
 }
 async function openSessionNow({ session, prompt, focus = false, here = false, stack = false, label, max = 0 }) {
@@ -131,6 +135,7 @@ async function closeTab({ label }) {
   if (matches.length !== 1) return { closed: false, matches: matches.length, layout: layout() };
   await closeWithTimeout(matches[0]);
   await vscode.commands.executeCommand("workbench.action.evenEditorWidths");
+  publishTabs();
   return { closed: true, matches: 1, layout: layout() };
 }
 
@@ -224,12 +229,49 @@ const scan = () => {
 const workspaceFile = () => (vscode.workspace.workspaceFile && vscode.workspace.workspaceFile.scheme === "file" ? vscode.workspace.workspaceFile.fsPath : null);
 const isTicketWindow = () => /[\\/]\.vixtab[\\/]windows[\\/][^\\/]+\.code-workspace$/i.test(workspaceFile() || "");
 
+let registeredAt = "";
 function registerWindow(context) {
   fs.mkdirSync(WINDOWS, { recursive: true });
   const folders = (vscode.workspace.workspaceFolders || []).map((f) => f.uri.fsPath);
-  const info = { pid: process.pid, folders, version: context.extension.packageJSON.version, at: new Date().toISOString(), kind: isTicketWindow() ? "tickets" : "main", workspaceFile: workspaceFile() };
+  registeredAt = new Date().toISOString();
+  const info = { pid: process.pid, folders, version: context.extension.packageJSON.version, at: registeredAt, kind: isTicketWindow() ? "tickets" : "main", workspaceFile: workspaceFile() };
   fs.writeFileSync(`${WINDOW_FILE}.tmp`, JSON.stringify(info));
   fs.renameSync(`${WINDOW_FILE}.tmp`, WINDOW_FILE);
+  publishTabs();
+}
+
+// The window's Claude tabs for the CLI: written whenever they change (VS Code tab events, and right after each open or close
+// this extension performs) and every 15 s as a heartbeat. A file whose heartbeat stopped belongs to a window that no longer
+// runs its extension host normally: the CLI does not put new tabs there. Readers on Windows can make the rename fail for a
+// moment: the next change or heartbeat writes it again.
+function publishTabs() {
+  if (!registeredAt) return;
+  const tabs = claudeTabs();
+  const state = { pid: process.pid, at: registeredAt, beat: Date.now(), maxTabs: maxTabs(), claude: tabs.length, labels: tabs.map((x) => x.t.label), layout: layout() };
+  try {
+    fs.mkdirSync(path.dirname(TABS_FILE), { recursive: true });
+    fs.writeFileSync(`${TABS_FILE}.tmp`, JSON.stringify(state));
+    fs.renameSync(`${TABS_FILE}.tmp`, TABS_FILE);
+  } catch (e) {
+    log(`could not write ${TABS_FILE}: ${(e && e.message) || e}`);
+  }
+}
+let publishTimer = null;
+const tabsChanged = () => {
+  if (publishTimer) return;
+  publishTimer = setTimeout(() => {
+    publishTimer = null;
+    publishTabs();
+  }, 150);
+};
+function watchTabs(context) {
+  const beat = setInterval(publishTabs, 15000);
+  context.subscriptions.push(
+    vscode.window.tabGroups.onDidChangeTabs(tabsChanged),
+    vscode.window.tabGroups.onDidChangeTabGroups(tabsChanged),
+    vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration("vixtab.maxTabsPerWindow") && tabsChanged()),
+    { dispose: () => (clearInterval(beat), publishTimer && clearTimeout(publishTimer)) },
+  );
 }
 
 // ── CLI ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -691,6 +733,7 @@ function activate(context) {
   ctx = context;
   fs.mkdirSync(COMMANDS, { recursive: true });
   registerWindow(context);
+  watchTabs(context);
   watchTicketWindow(context);
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(() => registerWindow(context)));
   const w = fs.watch(COMMANDS, (_e, f) => f && void handle(String(f)));
@@ -787,9 +830,11 @@ function activate(context) {
 
 function deactivate() {
   if (!ctx) return; // stayed inactive (retireLegacy): the window file is the old extension's
-  try {
-    fs.unlinkSync(WINDOW_FILE);
-  } catch {}
+  for (const f of [WINDOW_FILE, TABS_FILE]) {
+    try {
+      fs.unlinkSync(f);
+    } catch {}
+  }
 }
 
 module.exports = { activate, deactivate };

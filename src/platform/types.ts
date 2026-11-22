@@ -17,6 +17,20 @@ export interface Platform {
   /** Commit charge vs commit limit. Windows fails allocations when the commit limit is reached even with RAM free. */
   commitMB(): { used: number; limit: number } | null;
   processes(): Proc[];
+  /** When a process started, ms since epoch (0 = unknown or gone): a pid that started after it was recorded is a reused pid. */
+  startedAt(pid: number): number;
+  /**
+   * The same start time as a value that never moves with the wall clock (Linux: ms since boot from the kernel's tick count;
+   * Windows: the creation time, fixed when the process starts), to tell a process from a later one with the same pid. 0 = gone.
+   */
+  startKey(pid: number): number;
+  /**
+   * Ancestor chain of pid, nearest first, without listing every process's command line (that takes seconds on Windows). A
+   * "parent" that started after its child is a reused pid and ends the chain.
+   */
+  ancestorPids(pid: number, parents?: Map<number, number>): number[];
+  /** pid → parent pid of every process, cheaply (no command lines), for many ancestorPids calls at once. */
+  parents(): Map<number, number>;
   /** The n processes using the most memory, one per line, for alerts. */
   topProcesses(n: number): string;
   /** How `runCapped` enforces the memory cap on this machine ("systemd scope", "job object", or "none: …"). */

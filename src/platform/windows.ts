@@ -22,6 +22,10 @@ function ffi() {
     SetInformationJobObject: { args: [FFIType.ptr, FFIType.i32, FFIType.ptr, FFIType.u32], returns: FFIType.bool },
     AssignProcessToJobObject: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.bool },
     GetCurrentProcess: { args: [], returns: FFIType.ptr },
+    GetProcessTimes: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr], returns: FFIType.bool },
+    CreateToolhelp32Snapshot: { args: [FFIType.u32, FFIType.u32], returns: FFIType.ptr },
+    Process32FirstW: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.bool },
+    Process32NextW: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.bool },
   }).symbols;
   ntdll = dlopen("ntdll.dll", {
     NtQueryInformationProcess: { args: [FFIType.ptr, FFIType.u32, FFIType.ptr, FFIType.u32, FFIType.ptr], returns: FFIType.i32 },
@@ -85,6 +89,53 @@ export const windows: Platform = {
   commitMB: () => {
     const m = memStatus();
     return m ? { used: m.commitLimit - m.commitAvail, limit: m.commitLimit } : null;
+  },
+
+  startedAt(pid) {
+    ffi();
+    const h = k32.OpenProcess(0x1000, false, pid); // PROCESS_QUERY_LIMITED_INFORMATION
+    if (!h) return 0;
+    try {
+      const t = new BigUint64Array(4); // creation, exit, kernel, user (FILETIME: 100 ns since 1601)
+      if (!k32.GetProcessTimes(h, ffiPtr(t), ffiPtr(t, 8), ffiPtr(t, 16), ffiPtr(t, 24))) return 0;
+      return t[0] ? Number(t[0] / 10000n) - 11_644_473_600_000 : 0;
+    } finally {
+      k32.CloseHandle(h);
+    }
+  },
+
+  startKey(pid) {
+    return this.startedAt(pid);
+  },
+
+  parents() {
+    ffi();
+    // PROCESSENTRY32W (x64, 568 bytes): dwSize @0, th32ProcessID @8, th32ParentProcessID @32.
+    const parent = new Map<number, number>();
+    const snap = k32.CreateToolhelp32Snapshot(0x2, 0); // TH32CS_SNAPPROCESS
+    if (!snap || Number(snap) <= 0 || Number(snap) > 2 ** 48) return parent; // INVALID_HANDLE_VALUE, signed or not
+    try {
+      const e = new Uint8Array(568), dv = new DataView(e.buffer);
+      dv.setUint32(0, 568, true);
+      for (let ok = k32.Process32FirstW(snap, ffiPtr(e)); ok; ok = k32.Process32NextW(snap, ffiPtr(e))) parent.set(dv.getUint32(8, true), dv.getUint32(32, true));
+    } finally {
+      k32.CloseHandle(snap);
+    }
+    return parent;
+  },
+
+  ancestorPids(pid, parents) {
+    const parent = parents ?? this.parents();
+    const out: number[] = [];
+    for (let p = pid, s = this.startedAt(pid); out.length < 64; ) {
+      const pp = parent.get(p);
+      if (!pp || pp === p || out.includes(pp) || !parent.has(pp)) break; // a parent that has exited ends the chain too
+      const ps = this.startedAt(pp);
+      if (ps && s && ps > s) break;
+      out.push(pp);
+      [p, s] = [pp, ps];
+    }
+    return out;
   },
 
   processes(): Proc[] {

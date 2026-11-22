@@ -11,9 +11,34 @@ Start with `vixtab doctor` inside the repository: every FAIL line comes with its
 | 3 (other) | the Claude CLI did not start or did not save the session title | the message ends with the CLI screen; check that the Claude Code extension is installed and signed in |
 | 4 + `reload needed` | Claude Code's own tab state is broken ("Webview is disposed") | reload the VS Code window (*Developer: Reload Window*); this restarts every Claude session of that window, so the user chooses when |
 | 4 (other) | the tab did not start its Claude process, or the extension did not answer | retry once; `vixtab tab windows` lists the windows that run the extension |
-| 5 | a Claude tab with this label (`<prefix>-<name>`) is already open | close that tab or pick another name; "in another project" = two projects got the same prefix: give one of them its own `sessionPrefix` in `vixtab.config.json` |
-| 6 | resource gate closed (RAM in use above `sessions.maxRam`, 92 % by default; swap, commit, CPU, or `sessions.max`) | keep the ticket queued; `vixtab session count` shows what is missing |
+| 5 | a Claude tab with this label (`<prefix>-<name>`) is already open, or another command is opening it right now | a `session=… existing=yes` line on stdout = this project's tab with that label (an earlier open was interrupted): use it; otherwise close that tab or pick another name; "in another project" = two projects got the same prefix: give one of them its own `sessionPrefix` in `vixtab.config.json` |
+| 6 | resource gate closed (RAM in use above `sessions.maxRam`, 92 % by default; swap, commit, CPU, or `sessions.max`), every window full, or the line for the `session-open` lock did not move within `--wait` | keep the ticket queued, or pass `--wait-gate` to wait for the gate; `vixtab session count` shows what is missing, `vixtab session queue` who is in line |
 | 6 + `usage:` | the Claude account's 5-hour session or week is at the usage limit (`vixtab usage limit`, default 96 %) | pause: `vixtab usage wait` sleeps until it resets; or raise the limit |
+
+## `session open` is slow or waits
+
+`vixtab session queue` shows the opener that checks the resource gate now (and what it waits for), the openers in line, the tabs
+being opened with their step, the median time of recent opens per step, and the VS Code windows that do not answer.
+`--timings` prints the steps of one open:
+
+| Step | What runs | Usually |
+|---|---|---|
+| check | the label is looked up in every window's tab file (no window is asked) | well under 1 s |
+| queue | waiting in line for the project's `session-open` lock | 0, or a few seconds per opener ahead |
+| gate | measuring RAM, swap, commit, CPU (and the usage limit) | about 2 s; longer with `--wait-gate` while the gate is closed |
+| window | choosing a window from the tab files (and opening a ticket window when all are full) | under 1 s; up to a minute for a new ticket window |
+| create | the Claude CLI that names the session (and answers one prompt with `--model`) | 5 to 30 s |
+| open | the window opens the tab, in its queue of tab actions | seconds; longer while that window closes other tabs |
+| cli | the tab starts its Claude process | seconds; up to 45 s on a busy machine |
+
+Only `queue` and `gate` hold the lock; the other steps of several opens run side by side. Open many tickets with one command
+(`vixtab session open T-001 T-002 …`) rather than several commands in parallel shell loops: the line keeps the order.
+
+Tab counts come from `~/.cache/vixtab/window-tabs/<pid>.json`, which each window rewrites at every tab change and every
+15 s; `vixtab session count` says who counted each window. "counted from its processes" = the window runs an older VixTab
+extension (reload it when convenient): its Claude tab CLIs are counted, which can lag by up to a minute after a tab closes.
+"not answering" = the window's file stopped beating (a hung extension host) or the last command sent to it timed out: no new
+tab goes there. A registration in `~/.cache/vixtab/windows` whose pid now belongs to a younger process is ignored.
 
 ## "this board is on origin/main, published with your code"
 

@@ -39,15 +39,21 @@ Linux and in Git Bash on Windows). User goal / extra instructions: $ARGUMENTS
 
 ## 2. Dispatch
 `vt ticket ready` lists the tickets that can start now (`ready:`) and the ones that wait (`waits: T-5 after T-3 (⏳ DOING …)`).
-For each ready ticket:
-1. `vt session open <ID>` ⇒ `session=… name=<NAME> pid=<PID> label=… auto_name=… model=…` (the ticket's Model line, or `default`).
-   The label is the project's prefix + the id (`VE-T-001`), so tabs of other projects never share it; always pass the bare id
-   to `session open`/`close`. Exit 6 = resource gate closed (RAM/CPU/swap) or every window full (`max` per window: the user's setting): stop opening,
-   keep the rest queued, retry after the next `done` event; when the reason starts with `usage:`, pause as for a
-   `vt watch usage` alert (step 3). Exit 3 with "trust" (rare: only when the folder is not open in a VS Code
-   window running VixTab) = ask the user; if they agree, re-run with `--trust`. Exit 5 = label already open. Exit 4 = tab problem: with "reload needed", stop opening
-   and ask the user to reload the VS Code window (that restarts every session in it, so they choose when); otherwise retry once.
-2. SendMessage to NAME, one line: `Work on ticket <ID> with the vixtab-ticket skill (board: BOARD).` If NAME is
+Open all ready tickets with ONE command, in the background (run_in_background; you are notified when it exits):
+`vt session open <ID> <ID> … --wait-gate`. Never wrap it in `sleep`/retry loops and never start a second opener while one
+runs: VixTab queues the opens of a project itself (first come, first served), opens up to 3 tabs side by side, and with
+`--wait-gate` waits up to 15 minutes for RAM/CPU instead of failing. `vt session queue` shows what it is doing. Then:
+1. Read its output. One line per opened tab: `session=… name=<NAME> pid=<PID> label=… auto_name=… model=…` (the ticket's
+   Model line, or `default`); the last line is `batch: opened=<IDs> not_opened=<IDs>`. The label is the project's prefix + the
+   id (`VE-T-001`), so tabs of other projects never share it; always pass the bare ids to `session open`/`close`. For each
+   ticket in `not_opened`, its error line (`<ID> (exit <n>): …`) says why. Exit 6 = resource gate still closed after the
+   wait, or every window full (`max` per window: the user's setting): keep the rest queued, open them after the next `done`
+   event; when the reason starts with `usage:`, pause as for a `vt watch usage` alert (step 3). Exit 3 with "trust" (rare:
+   only when the folder is not open in a VS Code window running VixTab) = ask the user; if they agree, re-run with `--trust`.
+   Exit 5 = label already open: when a `session=… existing=yes` line came with it, that tab is this ticket's (an earlier open
+   was interrupted): use its NAME and PID, do not open it again. Exit 4 = tab problem: with "reload needed", stop opening and
+   ask the user to reload the VS Code window (that restarts every session in it, so they choose when); otherwise retry once.
+2. SendMessage to each NAME, one line: `Work on ticket <ID> with the vixtab-ticket skill (board: BOARD).` If NAME is
    not reachable, try the `label=` and then the `auto_name=` value (Claude Code versions differ; ListAgents shows the right one).
 3. Keep one line per ticket in your notes: ID, NAME, PID, model. Where the tab opens (a column next to you, or a ticket window) is
    decided by VixTab — do not move tabs around.

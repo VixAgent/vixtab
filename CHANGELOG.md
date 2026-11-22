@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.10.0 — 2026-11-22
+
+- **Opening a tab no longer takes minutes: no window is asked any more.** Measured on a machine with 20 registered VS Code
+  windows: one `session open` held the project's open lock for 5.5 minutes, nearly all of it spent asking windows for their
+  tabs, one after the other, 60 s each, while 7 of them never answered. Now each window keeps its own count: the extension
+  writes its Claude tabs (count, labels, layout, its tab cap) to `~/.cache/vixtab/window-tabs/<pid>.json` at every tab
+  change, after every open and close, and every 15 s. `session open`, `session close`, `session count` and
+  `tab windows` read those files, plus the tabs other openers are about to put in each window. A window that still runs an
+  older extension (until it is reloaded) is counted from its processes: every Claude tab runs a CLI below the window's
+  extension host. A window whose file stopped beating, or whose last command timed out, gets no new tab. The window still
+  counts its tabs once more right before it opens one. Registrations whose pid now belongs to another process (a window
+  that closed without removing its file) are ignored, and finding the caller's window no longer lists every process (3 s on
+  Windows, now under 0.1 s). `tab windows` over 12 windows: 0.65 s.
+- **Openers work side by side.** The `session-open` lock now covers only the resource gate and the RAM reservation, a few
+  seconds. Creating the session (with its model turn), choosing the window, opening the tab and waiting for its CLI run
+  outside it. One label is opened by one command at a time (exit 5 otherwise), each window still counts its tabs right
+  before opening one, and a new ticket window opens under its own lock after one more look, so openers side by side do not
+  each open one. Openers wait in line first come, first served, wake as soon as the lock is free and say their place and who
+  holds it. `--wait <s>` sets how long (default 600; it was a fixed 180).
+- **`--wait-gate[=<s>]`.** When RAM, swap, commit or CPU is short, `session open` waits for the gate to open (default
+  15 minutes, checked every 10 s) instead of exiting 6. The usage limit still exits 6 at once.
+- **Several tickets in one command.** `vixtab session open T-001 T-002 T-003` opens them all, up to `--parallel 3` at a
+  time, prints one `session=` line per tab and `batch: opened=… not_opened=…`. The orchestrator skill now opens every
+  ready ticket this way, in the background, with no sleep-and-retry loops.
+- **`vixtab session queue`** shows who checks the gate now and what it waits for, who is in line, the tabs being opened and
+  their step, how long recent opens took, and the windows that do not answer. `--timings` prints how long each step took;
+  the tab history keeps the same numbers.
+- **Interrupted opens.** Exit 5 (label already open) also prints the tab's `session=… existing=yes` line when it is this
+  project's tab, so a caller that was stopped in the middle of an open can carry on with it.
+- Locks recognize an owner whose pid now belongs to a younger process (Windows reuses pids quickly) and take them over.
+
 ## 0.9.1 — 2026-11-09
 
 - **Session labels carry the project's prefix.** `vixtab session open T-001` now labels the tab `VE-T-001` in a folder named

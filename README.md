@@ -171,7 +171,7 @@ Tickets run in parallel by default. A session waits only for one of these reason
 | it needs another ticket's result | `vixtab ticket new … --after T-003[,T-004]` (the **After** column) | `claim` refuses (exit 8) until every After ticket is ✅ DONE; `vixtab ticket ready` lists what can start | the orchestrator's waiter prints `ready T-005` together with `done T-003` |
 | it has a question | `vixtab ticket ask T-002 "…"` (status ❓ ASK, question in the ticket) | the session stops | `ask T-002 #1` → the orchestrator answers (`ticket answer`), or asks you first |
 | it shares a file with another ticket | the ticket's **Area**; `vixtab ticket overlap` | merges are serialized; tests run after the rebase | `rebase T-004 recipes/INDEX.md` when the other ticket lands |
-| the machine is full | — | `session open` exits 6 while the resource gate is closed | the next `done` frees room; the ticket opens then |
+| the machine is full | — | `session open` exits 6 while the resource gate is closed, or waits for it with `--wait-gate` | the next `done` frees room; the ticket opens then |
 | its session died | — | the ticket keeps its lock and worktree | `gone T-002` → a fresh session continues with `--takeover` |
 
 A ticket session can also wait by itself: `vixtab wait --as T-005 T-003` in the background, then rebase and continue when it
@@ -293,7 +293,7 @@ login; reading costs no usage. Nothing else is needed, in any project.
 | `vixtab ticket done <id>` · `release <id>` | ✅ DONE + clean-up · give the ticket back |
 | `vixtab ticket ask <id> "<question>"` · `answer <id> "<answer>"` | ❓ ASK ↔ ⏳ DOING, recorded in the ticket |
 | `vixtab ticket overlap [<id>…]` | files changed by two or more active tickets |
-| `vixtab session open <name> [--model <m>]` · `close <name> [<pid>]` · `count` · `list` | Claude tabs labeled `<prefix>-<name>`, resource-gated; `close` only searches this project's windows; `--model` (or the ticket's Model line) picks the model for that tab only |
+| `vixtab session open <name>… [--model <m>] [--wait-gate]` · `close <name> [<pid>]` · `count` · `queue` · `list` | Claude tabs labeled `<prefix>-<name>`, resource-gated, several in one command; `close` only searches this project's windows; `--model` (or the ticket's Model line) picks the model for that tab only; `queue` shows the openers in line and the tabs being opened |
 | `vixtab tabs [--json] [--load]` · `tabs clear` | every Claude tab of this machine by VS Code window: state and for how long, ticket status, model, renderer load (`--load`); the tabs VixTab opened that have closed |
 | `vixtab tab layout` · `even` · `join` · `open <session>` · `close <label>` · `windows` · `new-window` | low-level tab control, ticket windows |
 | `vixtab wait [--as <name>] <id>[:<pid>] …` | sleep until `done` / `ready` / `ask` / `rebase` / `gone` events (any session can use it) |
@@ -344,9 +344,16 @@ Environment overrides: `VIXTAB_HOME`, `VIXTAB_REPO`, `VIXTAB_SESSION_PREFIX`, `V
 - **Extension bridge.** The VixTab extension registers its window in `~/.cache/vixtab/windows/<pid>.json` and executes tab
   commands written to `~/.cache/vixtab/commands/<pid>-<id>.cmd.json` — only the window whose extension-host pid is in the file
   name acts, so tabs open in the window you are working in. Tab actions run one at a time.
+- **Tab counts without asking.** Each window keeps its Claude tabs in `~/.cache/vixtab/window-tabs/<pid>.json`, rewritten at
+  every tab change (yours included) and every 15 s; VixTab reads those files to choose a window and to find a label. A window
+  with an older extension is counted from its processes (each Claude tab runs a CLI below the window's extension host).
 - **Labeled sessions without tokens.** `vixtab session open` runs the Claude CLI that ships with the Claude Code extension in a
   pseudo-terminal, types `/rename <label>` and `/exit`, then the extension opens that session with Claude Code's
   `claude-vscode.editor.open` command; the tab takes its label from the session title.
+- **Opening many tabs.** The openers of a project wait for each other only while one of them checks the resource gate and
+  reserves RAM for its tab (seconds), first come, first served. Creating the session, opening the tab and waiting for its CLI
+  run side by side; each window counts its own tabs right before it opens one. No window is asked how many tabs it holds, so a
+  window that does not answer (a hung extension host, a registration left by a closed window) costs nothing.
 - **Model per ticket.** On resume Claude Code restores the model of the session's last answer. With `--model <m>` (or a
   `- **Model:** <m>` line in the ticket) the bootstrap CLI runs with `--model <m>` and the model answers one short prompt, so
   the tab continues on that model. That one turn is the only cost; no settings file is written and the user's default stays.

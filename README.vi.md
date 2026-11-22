@@ -43,7 +43,10 @@ worktree git riêng và vào nhánh `main` qua hàng đợi gộp có chạy tes
   Phiếu tạo với `--after T-003` không nhận được trước khi T-003 xong (`claim` từ chối, mã 8). `vixtab ticket ready` liệt kê các
   phiếu chạy được ngay. T-003 vừa xong thì phiên điều phối được đánh thức với sự kiện `ready T-005` và mở phiếu đó. Phiên có câu hỏi
   thì chờ câu trả lời. Hai phiếu sửa chung một tệp vẫn chạy song song: khi phiếu đầu đã gộp, phiếu sau được báo rebase rồi chạy
-  lại test. Máy hết chỗ thì phiếu xếp hàng, mở khi có phiên đóng. Một phiên phiếu cũng có thể tự chờ phiếu khác
+  lại test. Máy hết chỗ thì phiếu xếp hàng, mở khi có phiên đóng (`--wait-gate`: lệnh mở tự chờ cổng mở). Phiên điều phối mở mọi
+  phiếu sẵn sàng bằng 1 lệnh (`vixtab session open T-001 T-002 …`). Mỗi cửa sổ tự ghi số tab của nó ra tệp, nên VixTab không phải
+  hỏi cửa sổ nào; các lệnh mở của 1 dự án chỉ chờ nhau vài giây lúc kiểm cổng
+  tài nguyên, theo thứ tự đến (`vixtab session queue` cho xem hàng chờ). Một phiên phiếu cũng có thể tự chờ phiếu khác
   (`vixtab wait --as T-005 T-003`).
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/dependencies-dark.svg"><img src="docs/images/dependencies.svg" alt="Các phiên chờ nhau theo ràng buộc: phiếu phụ thuộc, câu hỏi, tệp dùng chung, cổng tài nguyên" width="100%"></picture>

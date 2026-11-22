@@ -2,7 +2,7 @@
 import { describe, expect, test } from "bun:test";
 import { type Layout, type WindowInfo, MAX_TABS_DEFAULT, tabsIn } from "../src/core/bridge.ts";
 import type { Config } from "../src/core/config.ts";
-import { type WindowIO, capOf, chooseWindow } from "../src/commands/session.ts";
+import { type WindowIO, capOf, chooseWindow, pendingIn } from "../src/commands/session.ts";
 import { VixError } from "../src/core/util.ts";
 
 const REPO = "/work/my-app";
@@ -76,6 +76,43 @@ describe("auto", () => {
     const { fake, opened } = io(100, { 100: [6, 6, 3], 200: [6, 6] });
     expect(await chooseWindow(config(), REPO, false, fake)).toEqual({ win: 900, stack: true, max: 6 });
     expect(opened).toEqual([900]);
+  });
+  test("openers side by side, every window full ⇒ one new ticket window, under the lock, for all of them", async () => {
+    const { fake, opened } = io(100, { 100: [6, 6, 3], 200: [6, 6] });
+    let chain = Promise.resolve();
+    const slowOpen = fake.openTicketWindow;
+    const shared: WindowIO = {
+      ...fake,
+      openTicketWindow: async (cwd) => (await Bun.sleep(100), slowOpen(cwd)),
+      lock: async () => {
+        let free!: () => void;
+        const mine = new Promise<void>((r) => (free = r)), before = chain;
+        chain = before.then(() => mine);
+        await before;
+        return free;
+      },
+    };
+    const both = await Promise.all([chooseWindow(config(), REPO, false, shared), chooseWindow(config(), REPO, false, shared)]);
+    expect(both.map((t) => t.win)).toEqual([900, 900]);
+    expect(opened).toEqual([900]);
+  });
+  test("tabs other openers are opening count against their window", async () => {
+    const { fake } = io(100, { 100: [5, 6, 3], 200: [3, 6], 300: [2, 6] });
+    const pending: Record<number, number> = { 100: 1, 300: 2 };
+    expect(await chooseWindow(config(), REPO, false, { ...fake, pending: (_c, w) => pending[w] ?? 0 })).toEqual({ win: 200, stack: true, max: 6 });
+    expect((await chooseWindow(config(), REPO, false, fake)).win).toBe(100);
+  });
+  test("a window that does not answer is never used", async () => {
+    const { fake, opened } = io(100, { 100: [6, 6, 3], 300: [0, 6] });
+    const muted = { ...fake, windows: () => [...fake.windows(), win(200, "tickets")], tabs: async (p: number) => (p === 300 ? { n: -1, max: 6, layout: null } : fake.tabs(p)) };
+    expect((await chooseWindow(config(), REPO, false, muted)).win).toBe(900);
+    expect(opened).toEqual([900]);
+  });
+  test("opens in flight count until their window counts the tab itself", () => {
+    const r = (label: string, window: number, phase: string, done?: number) => ({ label, window, phase, done, pid: 1, host: "h", started: 0, since: 0, at: 0, reserved: true });
+    const recs = [r("A", 100, "create"), r("B", 100, "open"), r("C", 100, "cli"), r("D", 100, "window"), r("E", 200, "open"), r("F", 100, "done", 5)];
+    expect(pendingIn(config(), 100, [], recs)).toBe(3);
+    expect(pendingIn(config(), 100, ["C"], recs)).toBe(2);
   });
   test("a lower cap in vixtab.config.json fills windows sooner", async () => {
     expect((await chooseWindow(config({ inWindowMax: 3 }), REPO, false, io(100, { 100: [3, 6, 3], 200: [1, 6] }).fake)).win).toBe(200);

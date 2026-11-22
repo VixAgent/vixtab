@@ -1,6 +1,6 @@
 // vixtab tab layout | even | open <session> | close <label> — low-level tab control through the VixTab extension.
 import { has, parseArgs, str } from "../core/args.ts";
-import { callerWindow, claudeTabCount, layout, openTicketWindow, send, windows } from "../core/bridge.ts";
+import { callerWindow, census, layout, openTicketWindow, send, windows } from "../core/bridge.ts";
 import { loadConfig } from "../core/config.ts";
 import { fail } from "../core/util.ts";
 
@@ -46,7 +46,11 @@ export async function tab(argv: string[]): Promise<void> {
     }
     case "windows": {
       const me = callerWindow();
-      for (const w of windows()) console.log(`${w.pid}  v${w.version}  ${(w.kind ?? "main").padEnd(7)}  claude_tabs=${await claudeTabCount(w.pid)}${w.pid === me ? "  (this window)" : ""}  ${w.folders.join(", ")}`);
+      const ws = windows(), cs = census(ws);
+      for (const w of ws) {
+        const t = cs.get(w.pid)!;
+        console.log(`${w.pid}  v${w.version}  ${(w.kind ?? "main").padEnd(7)}  claude_tabs=${t.n}${!t.answers ? " (not answering)" : t.from === "processes" ? " (from its processes)" : ""}${w.pid === me ? "  (this window)" : ""}  ${w.folders.join(", ")}`);
+      }
       return;
     }
     default:

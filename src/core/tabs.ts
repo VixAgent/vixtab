@@ -14,7 +14,8 @@ export const LOG_MAX = 500;
 export const CLOSED_MAX = 50;
 
 export type TabEvent =
-  | { ev: "open"; at: number; label: string; sessionId: string; pid: number; cwd: string; window: number; model: string | null }
+  /** ms: how long each step of session open took (check, queue, gate, window, create, open, cli, total). */
+  | { ev: "open"; at: number; label: string; sessionId: string; pid: number; cwd: string; window: number; model: string | null; ms?: Record<string, number> }
   /** close: by `session close`; gone: the overview saw the tab disappear (closed by hand, window closed). */
   | { ev: "close" | "gone"; at: number; label: string; sessionId: string | null; status: string | null }
   /** The panel's "Clear": closed tabs up to this moment are no longer listed. */

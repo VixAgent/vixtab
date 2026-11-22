@@ -1,5 +1,5 @@
 // Small helpers shared by every command: paths, errors, sleeping, formatting.
-import { realpathSync } from "node:fs";
+import { realpathSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 
 export const IS_WIN = process.platform === "win32";
@@ -33,6 +33,23 @@ export const native = (p: string) => (IS_WIN ? norm(p).replace(/\//g, "\\") : no
 export const HOME = norm(process.env.USERPROFILE && IS_WIN ? process.env.USERPROFILE : homedir());
 
 export const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Write a file whole: readers see the old content or the new one, never half of it. Windows refuses to rename over a file that
+ * another process is reading at that moment (EPERM, EBUSY, EACCES): retry for a moment before giving up.
+ */
+export function writeAtomic(file: string, text: string): void {
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, text);
+  for (let i = 0; ; i++) {
+    try {
+      return renameSync(tmp, file);
+    } catch (e: any) {
+      if (i >= 20 || !/^(EPERM|EBUSY|EACCES)$/.test(e?.code ?? "")) throw e;
+      Bun.sleepSync(10 + 10 * i);
+    }
+  }
+}
 
 /** An error that the CLI prints without a stack trace and turns into an exit code. */
 export class VixError extends Error {
